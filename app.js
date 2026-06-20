@@ -45,6 +45,12 @@ const EXTRAS = [
   { id: "none", label: "ไม่เพิ่มอะไร", price: 0 },
 ];
 
+const ADDONS = [
+  { id: "spoon", label: "ช้อนส้อม" },
+  { id: "chili", label: "พริกน้ำปลา" },
+  { id: "sauce", label: "ซอส" },
+];
+
 // ==================== Session & Orders ====================
 
 const sessions = new Map();
@@ -57,13 +63,14 @@ function getSession(userId) {
       state: "idle",
       currentItem: null,
       cart: [],
+      addons: [],
       orderId: null,
     });
   }
   return sessions.get(userId);
 }
 
-function buildSummaryText(cart) {
+function buildSummaryText(cart, addons) {
   let total = 0;
   const lines = cart.map((item, i) => {
     total += item.totalPrice;
@@ -72,6 +79,13 @@ function buildSummaryText(cart) {
     line += ` = ${item.totalPrice}.-`;
     return line;
   });
+  if (addons && addons.length > 0) {
+    const addonLabels = addons
+      .map((id) => ADDONS.find((a) => a.id === id))
+      .filter(Boolean)
+      .map((a) => a.label);
+    lines.push(`\n🛒 เพิ่มเติม: ${addonLabels.join(", ")}`);
+  }
   return { text: lines.join("\n"), total };
 }
 
@@ -395,8 +409,26 @@ async function handlePostback(replyToken, userId, data) {
     return showFoodMenu(replyToken);
   }
 
-  // --- ขั้นตอน 4→5: ยืนยัน → แสดง QR ---
+  // --- ขั้นตอน 4→4.5: ยืนยัน → เลือกสิ่งที่ต้องการเพิ่ม ---
   if (action === "confirm") {
+    session.addons = [];
+    return showAddonsSelection(replyToken, session);
+  }
+
+  // --- toggle addon ---
+  if (action === "addon") {
+    const addonId = params.get("id");
+    const idx = session.addons.indexOf(addonId);
+    if (idx === -1) {
+      session.addons.push(addonId);
+    } else {
+      session.addons.splice(idx, 1);
+    }
+    return showAddonsSelection(replyToken, session);
+  }
+
+  // --- ยืนยัน addons → ไปชำระเงิน ---
+  if (action === "addon_done") {
     return confirmAndShowPayment(replyToken, userId, session);
   }
 
@@ -406,6 +438,7 @@ async function handlePostback(replyToken, userId, data) {
       pendingOrders.delete(session.orderId);
     }
     session.cart = [];
+    session.addons = [];
     session.state = "idle";
     session.currentItem = null;
     session.orderId = null;
@@ -798,10 +831,108 @@ function showOrderSummary(replyToken, session) {
   ]);
 }
 
+// ==================== ขั้นตอน 4.5: เลือกสิ่งที่ต้องการเพิ่ม ====================
+
+function showAddonsSelection(replyToken, session) {
+  const checkboxRows = ADDONS.map((addon) => {
+    const selected = session.addons.includes(addon.id);
+    return {
+      type: "button",
+      style: selected ? "primary" : "secondary",
+      color: selected ? "#27AE60" : "#F0F0F0",
+      height: "sm",
+      margin: "sm",
+      action: {
+        type: "postback",
+        label: `${selected ? "☑" : "☐"} ${addon.label}`,
+        data: `a=addon&id=${addon.id}`,
+        displayText: `${selected ? "ยกเลิก" : "เพิ่ม"} ${addon.label}`,
+      },
+    };
+  });
+
+  const selectedCount = session.addons.length;
+  const subtitle =
+    selectedCount > 0
+      ? `เลือกแล้ว ${selectedCount} รายการ`
+      : "แตะเพื่อเลือก (เลือกได้หลายอย่าง)";
+
+  const bubble = {
+    type: "bubble",
+    header: {
+      type: "box",
+      layout: "vertical",
+      contents: [
+        {
+          type: "text",
+          text: "🛒 สิ่งที่ต้องการเพิ่ม",
+          weight: "bold",
+          size: "lg",
+          color: "#E85D3A",
+        },
+        {
+          type: "text",
+          text: subtitle,
+          size: "sm",
+          color: "#888888",
+          margin: "sm",
+        },
+      ],
+      backgroundColor: "#FFF8E7",
+      paddingAll: "15px",
+    },
+    body: {
+      type: "box",
+      layout: "vertical",
+      contents: checkboxRows,
+      paddingAll: "15px",
+    },
+    footer: {
+      type: "box",
+      layout: "horizontal",
+      spacing: "sm",
+      contents: [
+        {
+          type: "button",
+          style: "primary",
+          color: "#27AE60",
+          flex: 1,
+          action: {
+            type: "postback",
+            label: "✅ ยืนยัน",
+            data: "a=addon_done",
+            displayText: "ยืนยัน",
+          },
+        },
+        {
+          type: "button",
+          style: "secondary",
+          flex: 1,
+          action: {
+            type: "postback",
+            label: "ไม่ต้องการ",
+            data: "a=addon_done",
+            displayText: "ไม่ต้องการเพิ่มอะไร",
+          },
+        },
+      ],
+      paddingAll: "15px",
+    },
+  };
+
+  return reply(replyToken, [
+    {
+      type: "flex",
+      altText: "🛒 เลือกสิ่งที่ต้องการเพิ่ม",
+      contents: bubble,
+    },
+  ]);
+}
+
 // ==================== ขั้นตอน 5: ยืนยัน → แสดง QR Code ====================
 
 async function confirmAndShowPayment(replyToken, userId, session) {
-  const { text: summary, total } = buildSummaryText(session.cart);
+  const { text: summary, total } = buildSummaryText(session.cart, session.addons);
 
   orderCounter++;
   const orderId = `MGR${String(orderCounter).padStart(4, "0")}`;
@@ -809,6 +940,7 @@ async function confirmAndShowPayment(replyToken, userId, session) {
   pendingOrders.set(orderId, {
     userId,
     cart: [...session.cart],
+    addons: [...session.addons],
     summary,
     total,
     state: "await_slip",
@@ -929,6 +1061,7 @@ async function adminConfirmPayment(replyToken, orderId) {
 
   const customerSession = getSession(order.userId);
   customerSession.cart = [];
+  customerSession.addons = [];
   customerSession.state = "idle";
   customerSession.currentItem = null;
   customerSession.orderId = null;
