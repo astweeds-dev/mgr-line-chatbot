@@ -146,7 +146,7 @@ app.post("/api/order", express.json(), async (req, res) => {
                   align: "center",
                 },
                 { type: "separator" },
-                { type: "text", text: summary, size: "sm", color: "#666", wrap: true },
+                { type: "text", text: summary, size: "sm", color: "#666666", wrap: true },
                 {
                   type: "text",
                   text: `💰 รวม: ${total}.-`,
@@ -287,7 +287,7 @@ async function handleText(replyToken, userId, text) {
                 type: "text",
                 text: "เลือกเมนู กดจำนวน ยืนยัน\nจบในหน้าเดียว!",
                 size: "sm",
-                color: "#888",
+                color: "#888888",
                 align: "center",
                 margin: "md",
                 wrap: true,
