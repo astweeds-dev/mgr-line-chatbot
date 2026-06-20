@@ -55,6 +55,7 @@ app.use("/images", express.static(path.join(__dirname, "images")));
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/", (_req, res) => res.send("MGR LINE Chatbot is running!"));
+app.get("/health", (_req, res) => res.json({ status: "ok", uptime: process.uptime() }));
 
 // ==================== API: รับออเดอร์จากเว็บ ====================
 
