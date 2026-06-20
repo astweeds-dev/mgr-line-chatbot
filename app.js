@@ -491,11 +491,15 @@ async function handlePostback(replyToken, userId, data) {
     const order = pendingOrders.get(orderId);
     if (!order)
       return reply(replyToken, [{ type: "text", text: `❌ ไม่พบออเดอร์ #${orderId}` }]);
+    if (order.state === "confirmed")
+      return reply(replyToken, [{ type: "text", text: `⚠️ ออเดอร์ #${orderId} ยืนยันไปแล้ว` }]);
 
     const cs = getSession(order.userId);
     cs.state = "idle";
     cs.orderId = null;
-    pendingOrders.delete(orderId);
+    order.state = "confirmed";
+
+    const now = new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" });
 
     await client.pushMessage({
       to: order.userId,
@@ -508,7 +512,52 @@ async function handlePostback(replyToken, userId, data) {
     });
 
     return reply(replyToken, [
-      { type: "text", text: `✅ ยืนยัน #${orderId} แล้ว — แจ้งลูกค้าเรียบร้อย` },
+      {
+        type: "flex",
+        altText: `✅ ยืนยัน #${orderId} แล้ว`,
+        contents: {
+          type: "bubble",
+          body: {
+            type: "box",
+            layout: "vertical",
+            spacing: "md",
+            contents: [
+              {
+                type: "text",
+                text: `✅ ยืนยันแล้ว - ${now}`,
+                weight: "bold",
+                color: "#27AE60",
+                wrap: true,
+              },
+              {
+                type: "text",
+                text: `📋 #${orderId}\n${order.summary}\n💰 รวม: ${order.total}.-`,
+                size: "sm",
+                color: "#888888",
+                wrap: true,
+              },
+            ],
+            paddingAll: "15px",
+          },
+          footer: {
+            type: "box",
+            layout: "vertical",
+            contents: [
+              {
+                type: "button",
+                style: "secondary",
+                action: {
+                  type: "postback",
+                  label: "❌ ยกเลิก/คืนเงิน",
+                  data: `a=admin_reject&oid=${orderId}`,
+                  displayText: `ยกเลิก #${orderId}`,
+                },
+              },
+            ],
+            paddingAll: "15px",
+          },
+        },
+      },
     ]);
   }
 
@@ -518,7 +567,28 @@ async function handlePostback(replyToken, userId, data) {
     if (!order)
       return reply(replyToken, [{ type: "text", text: `❌ ไม่พบออเดอร์ #${orderId}` }]);
 
-    getSession(order.userId).state = "await_slip";
+    const wasConfirmed = order.state === "confirmed";
+    const cs = getSession(order.userId);
+    pendingOrders.delete(orderId);
+
+    if (wasConfirmed) {
+      cs.state = "idle";
+      cs.orderId = null;
+      await client.pushMessage({
+        to: order.userId,
+        messages: [
+          {
+            type: "text",
+            text: `❌ ออเดอร์ #${orderId} ถูกยกเลิกแล้ว\nกรุณาติดต่อเจ้าหน้าที่เรื่องการคืนเงินครับ`,
+          },
+        ],
+      });
+      return reply(replyToken, [
+        { type: "text", text: `❌ ยกเลิก #${orderId} (หลังยืนยัน) — แจ้งลูกค้าแล้ว` },
+      ]);
+    }
+
+    cs.state = "await_slip";
 
     await client.pushMessage({
       to: order.userId,
