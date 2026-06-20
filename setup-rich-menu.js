@@ -3,17 +3,20 @@ const sharp = require("sharp");
 require("dotenv").config();
 
 const TOKEN = process.env.CHANNEL_ACCESS_TOKEN;
+const LIFF_ID = process.env.LIFF_ID;
+const BASE_URL = process.env.BASE_URL;
 
 const client = new messagingApi.MessagingApiClient({
-  channelAccessToken: TOKEN,
-});
-const blobClient = new messagingApi.MessagingApiBlobClient({
   channelAccessToken: TOKEN,
 });
 
 const WIDTH = 2500;
 const HEIGHT = 843;
 const COL = Math.floor(WIDTH / 3);
+
+const foodAction = LIFF_ID
+  ? { type: "uri", uri: `https://liff.line.me/${LIFF_ID}` }
+  : { type: "uri", uri: `${BASE_URL}/order.html` };
 
 const richMenu = {
   size: { width: WIDTH, height: HEIGHT },
@@ -23,7 +26,7 @@ const richMenu = {
   areas: [
     {
       bounds: { x: 0, y: 0, width: COL, height: HEIGHT },
-      action: { type: "message", text: "อาหาร" },
+      action: foodAction,
     },
     {
       bounds: { x: COL, y: 0, width: COL, height: HEIGHT },

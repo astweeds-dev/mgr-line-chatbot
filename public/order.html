@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>MGR สั่งอาหาร</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;color:#333;padding-bottom:80px}
+.header{position:sticky;top:0;z-index:10;background:#E85D3A;color:#fff;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.header h1{font-size:20px;font-weight:700}
+.header .badge{background:#fff;color:#E85D3A;border-radius:20px;padding:2px 10px;font-size:13px;font-weight:700}
+.menu-item{background:#fff;margin:8px 12px;border-radius:12px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.06);transition:box-shadow .2s}
+.menu-item.has-qty{box-shadow:0 0 0 2px #E85D3A,0 2px 8px rgba(232,93,58,.15)}
+.item-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.item-name{font-size:15px;font-weight:600;flex:1}
+.qty-ctrl{display:flex;align-items:center;gap:0;border-radius:8px;overflow:hidden;border:1.5px solid #e0e0e0;flex-shrink:0}
+.qty-btn{width:36px;height:36px;border:none;font-size:20px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s}
+.qty-btn.minus{background:#f5f5f5;color:#999}
+.qty-btn.plus{background:#E85D3A;color:#fff}
+.qty-btn:active{opacity:.7}
+.qty-btn:disabled{opacity:.3}
+.qty-val{width:32px;text-align:center;font-size:16px;font-weight:700;background:#fff}
+.qty-val.active{color:#E85D3A}
+.item-bottom{display:flex;align-items:center;justify-content:space-between;margin-top:8px;gap:8px}
+.price-tag{font-size:14px;color:#888;font-weight:500}
+.meat-toggle{display:flex;gap:0;border-radius:8px;overflow:hidden;border:1.5px solid #e0e0e0}
+.meat-btn{border:none;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;background:#f9f9f9;color:#888}
+.meat-btn.active-pork{background:#E85D3A;color:#fff}
+.meat-btn.active-beef{background:#8B4513;color:#fff}
+.meat-btn:active{opacity:.7}
+.section-title{font-size:14px;font-weight:700;color:#888;padding:16px 20px 6px;text-transform:uppercase;letter-spacing:.5px}
+.summary-item{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px}
+.summary-item:last-child{border-bottom:none}
+.summary-item .s-name{flex:1}
+.summary-item .s-qty{color:#888;margin:0 12px}
+.summary-item .s-price{font-weight:600;white-space:nowrap}
+.addons-section{background:#fff;margin:8px 12px;border-radius:12px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.addons-section h3{font-size:15px;font-weight:700;margin-bottom:12px;color:#333}
+.addon-row{display:flex;align-items:center;padding:10px 0;border-bottom:1px solid #f5f5f5;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.addon-row:last-child{border-bottom:none}
+.addon-check{width:24px;height:24px;border-radius:6px;border:2px solid #ddd;margin-right:12px;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+.addon-check.checked{background:#27AE60;border-color:#27AE60}
+.addon-check.checked::after{content:"\2713";color:#fff;font-size:14px;font-weight:700}
+.addon-label{font-size:15px}
+.summary-card{background:#fff;margin:8px 12px;border-radius:12px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.total-row{display:flex;justify-content:space-between;padding-top:12px;margin-top:8px;border-top:2px solid #E85D3A;font-size:18px;font-weight:700}
+.total-row .t-price{color:#E85D3A}
+.bottom-bar{position:fixed;bottom:0;left:0;right:0;background:#fff;padding:12px 16px;box-shadow:0 -2px 10px rgba(0,0,0,.1);display:flex;align-items:center;gap:10px;z-index:20}
+.bottom-total{flex:1}
+.bottom-total .label{font-size:12px;color:#888}
+.bottom-total .amount{font-size:20px;font-weight:700;color:#E85D3A}
+.btn{border:none;border-radius:10px;padding:14px 24px;font-size:16px;font-weight:700;cursor:pointer;transition:all .15s;text-align:center}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:#E85D3A;color:#fff;flex:1}
+.btn-primary:disabled{background:#ccc;color:#fff}
+.btn-confirm{background:#27AE60;color:#fff;flex:1}
+.btn-secondary{background:#f0f0f0;color:#555;padding:14px 20px}
+.view{display:none}
+.view.active{display:block}
+.loading{position:fixed;inset:0;background:rgba(255,255,255,.9);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100}
+.loading .spinner{width:40px;height:40px;border:4px solid #f0f0f0;border-top-color:#E85D3A;border-radius:50%;animation:spin .6s linear infinite}
+.loading p{margin-top:12px;font-size:15px;color:#888}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty-msg{text-align:center;padding:40px 20px;color:#888;font-size:15px}
+</style>
+</head>
+<body>
+
+<div id="loading-init" class="loading">
+  <div class="spinner"></div>
+  <p>กำลังโหลด...</p>
+</div>
+
+<!-- ===== STEP 1: MENU ===== -->
+<div id="view-menu" class="view">
+  <div class="header">
+    <h1>🍱 เมนูอาหาร</h1>
+    <span class="badge" id="item-count">0 รายการ</span>
+  </div>
+  <div id="menu-list"></div>
+  <div class="bottom-bar">
+    <div class="bottom-total">
+      <div class="label">รวมทั้งหมด</div>
+      <div class="amount" id="menu-total">0.-</div>
+    </div>
+    <button class="btn btn-primary" id="btn-to-summary" disabled onclick="goToSummary()">สั่งอาหาร</button>
+  </div>
+</div>
+
+<!-- ===== STEP 2: SUMMARY ===== -->
+<div id="view-summary" class="view">
+  <div class="header" style="background:#27AE60">
+    <h1>🧾 สรุปออเดอร์</h1>
+  </div>
+  <div class="summary-card">
+    <div id="summary-list"></div>
+    <div class="total-row">
+      <span>รวมทั้งหมด</span>
+      <span class="t-price" id="summary-total">0.-</span>
+    </div>
+  </div>
+  <div class="addons-section">
+    <h3>🛒 สิ่งที่ต้องการเพิ่ม</h3>
+    <div class="addon-row" onclick="toggleAddon('spoon')">
+      <div class="addon-check" id="chk-spoon"></div>
+      <span class="addon-label">ช้อนส้อม</span>
+    </div>
+    <div class="addon-row" onclick="toggleAddon('chili')">
+      <div class="addon-check" id="chk-chili"></div>
+      <span class="addon-label">พริกน้ำปลา</span>
+    </div>
+    <div class="addon-row" onclick="toggleAddon('sauce')">
+      <div class="addon-check" id="chk-sauce"></div>
+      <span class="addon-label">ซอส</span>
+    </div>
+  </div>
+  <div class="bottom-bar">
+    <button class="btn btn-secondary" onclick="goToMenu()">แก้ไข</button>
+    <button class="btn btn-confirm" onclick="submitOrder()">✅ ยืนยันออเดอร์</button>
+  </div>
+</div>
+
+<!-- ===== LOADING OVERLAY ===== -->
+<div id="loading-submit" class="loading" style="display:none">
+  <div class="spinner"></div>
+  <p>กำลังส่งออเดอร์...</p>
+</div>
+
+<script>
+const MENU = [
+  {id:1,name:"ไข่เจียวหมูสับ",pork:60,beef:null},
+  {id:2,name:"ผัดกะเพรา",pork:70,beef:80},
+  {id:3,name:"น้ำมันหอย",pork:70,beef:80},
+  {id:4,name:"เต้าเจี้ยวผัดโหระพา",pork:70,beef:80},
+  {id:5,name:"ผัดพริกเผา",pork:70,beef:80},
+  {id:6,name:"ผัดพริกแกง",pork:70,beef:80},
+  {id:7,name:"กระเทียมพริกไทย",pork:70,beef:80},
+  {id:8,name:"พะแนง",pork:80,beef:90},
+  {id:9,name:"ผัดพริกแกงใต้",pork:80,beef:90},
+  {id:10,name:"ผัดพริกเกลือ",pork:80,beef:90},
+  {id:11,name:"ผัดไข่เค็ม",pork:90,beef:100},
+  {id:12,name:"เขียวหวานผัดแห้ง",pork:90,beef:100},
+  {id:13,name:"ไข่ระเบิด",pork:90,beef:null},
+  {id:14,name:"ผัดผงกะหรี่",pork:90,beef:100},
+];
+
+const ADDON_LIST = [
+  {id:"spoon",label:"ช้อนส้อม"},
+  {id:"chili",label:"พริกน้ำปลา"},
+  {id:"sauce",label:"ซอส"},
+];
+
+const qty = {};
+const meat = {};
+const addons = new Set();
+let userId = null;
+
+async function init() {
+  try {
+    const cfg = await fetch("/api/config").then(r => r.json());
+    if (cfg.liffId) {
+      await liff.init({ liffId: cfg.liffId });
+      if (liff.isInClient()) {
+        const profile = await liff.getProfile();
+        userId = profile.userId;
+      }
+    }
+  } catch (e) {
+    console.warn("LIFF init:", e);
+  }
+  renderMenu();
+  document.getElementById("loading-init").style.display = "none";
+  document.getElementById("view-menu").classList.add("active");
+}
+
+function changeQty(id, delta) {
+  const cur = qty[id] || 0;
+  const next = Math.max(0, Math.min(99, cur + delta));
+  if (next === 0) { delete qty[id]; }
+  else { qty[id] = next; if (!meat[id]) meat[id] = "pork"; }
+  renderMenu();
+}
+
+function setMeat(id, type) {
+  meat[id] = type;
+  renderMenu();
+}
+
+function toggleAddon(id) {
+  if (addons.has(id)) addons.delete(id); else addons.add(id);
+  ADDON_LIST.forEach(a => {
+    const el = document.getElementById("chk-" + a.id);
+    el.classList.toggle("checked", addons.has(a.id));
+  });
+}
+
+function getPrice(item) {
+  const m = meat[item.id] || "pork";
+  return m === "beef" && item.beef ? item.beef : item.pork;
+}
+
+function getTotal() {
+  let t = 0;
+  Object.entries(qty).forEach(([id, q]) => {
+    const item = MENU.find(m => m.id === +id);
+    if (item) t += getPrice(item) * q;
+  });
+  return t;
+}
+
+function getItemCount() {
+  return Object.values(qty).reduce((s, q) => s + q, 0);
+}
+
+function renderMenu() {
+  const list = document.getElementById("menu-list");
+  list.innerHTML = MENU.map(item => {
+    const q = qty[item.id] || 0;
+    const m = meat[item.id] || "pork";
+    const hasQty = q > 0;
+
+    let bottomHtml;
+    if (item.beef !== null) {
+      bottomHtml = `<div class="meat-toggle">
+        <button class="meat-btn ${m==="pork"?"active-pork":""}" onclick="setMeat(${item.id},'pork')">หมู ${item.pork}.-</button>
+        <button class="meat-btn ${m==="beef"?"active-beef":""}" onclick="setMeat(${item.id},'beef')">เนื้อ ${item.beef}.-</button>
+      </div>`;
+    } else {
+      bottomHtml = `<span class="price-tag">${item.pork}.-</span>`;
+    }
+
+    return `<div class="menu-item ${hasQty?"has-qty":""}">
+      <div class="item-top">
+        <span class="item-name">ข้าวราด ${item.name}</span>
+        <div class="qty-ctrl">
+          <button class="qty-btn minus" onclick="changeQty(${item.id},-1)" ${q===0?"disabled":""}>−</button>
+          <span class="qty-val ${hasQty?"active":""}">${q}</span>
+          <button class="qty-btn plus" onclick="changeQty(${item.id},1)">+</button>
+        </div>
+      </div>
+      <div class="item-bottom">${bottomHtml}</div>
+    </div>`;
+  }).join("");
+
+  const total = getTotal();
+  const count = getItemCount();
+  document.getElementById("menu-total").textContent = total + ".-";
+  document.getElementById("item-count").textContent = count + " รายการ";
+  const btn = document.getElementById("btn-to-summary");
+  btn.disabled = count === 0;
+}
+
+function getSelectedItems() {
+  return Object.entries(qty).map(([id, q]) => {
+    const item = MENU.find(m => m.id === +id);
+    const m = meat[id] || "pork";
+    const meatLabel = item.beef !== null ? (m === "beef" ? "เนื้อ" : "หมู") : null;
+    const price = getPrice(item);
+    const name = meatLabel ? `ข้าวราด ${item.name} ${meatLabel}` : `ข้าวราด ${item.name}`;
+    return { id: +id, name, meat: m, qty: q, unitPrice: price, totalPrice: price * q };
+  });
+}
+
+function goToSummary() {
+  const items = getSelectedItems();
+  const list = document.getElementById("summary-list");
+  list.innerHTML = items.map(item =>
+    `<div class="summary-item">
+      <span class="s-name">${item.name}</span>
+      <span class="s-qty">x${item.qty}</span>
+      <span class="s-price">${item.totalPrice}.-</span>
+    </div>`
+  ).join("");
+
+  document.getElementById("summary-total").textContent = getTotal() + ".-";
+  document.getElementById("view-menu").classList.remove("active");
+  document.getElementById("view-summary").classList.add("active");
+  window.scrollTo(0, 0);
+}
+
+function goToMenu() {
+  document.getElementById("view-summary").classList.remove("active");
+  document.getElementById("view-menu").classList.add("active");
+  window.scrollTo(0, 0);
+}
+
+async function submitOrder() {
+  const items = getSelectedItems();
+  if (items.length === 0) return;
+
+  const overlay = document.getElementById("loading-submit");
+  overlay.style.display = "flex";
+
+  try {
+    const body = {
+      userId: userId,
+      items: items,
+      addons: [...addons],
+      total: getTotal(),
+    };
+    const res = await fetch("/api/order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Server error");
+
+    if (typeof liff !== "undefined" && liff.isInClient()) {
+      liff.closeWindow();
+    } else {
+      overlay.querySelector("p").textContent =
+        "ส่งออเดอร์ #" + data.orderId + " เรียบร้อย! กลับไปดูที่ LINE ได้เลย";
+      overlay.querySelector(".spinner").style.display = "none";
+    }
+  } catch (e) {
+    overlay.style.display = "none";
+    alert("เกิดข้อผิดพลาด: " + e.message);
+  }
+}
+
+init();
+</script>
+</body>
+</html>
