@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>MGR สั่งอาหาร</title>
-<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;color:#333;padding-bottom:80px}
@@ -30,7 +29,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .meat-btn.active-pork{background:#E85D3A;color:#fff}
 .meat-btn.active-beef{background:#8B4513;color:#fff}
 .meat-btn:active{opacity:.7}
-.section-title{font-size:14px;font-weight:700;color:#888;padding:16px 20px 6px;text-transform:uppercase;letter-spacing:.5px}
 .summary-item{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px}
 .summary-item:last-child{border-bottom:none}
 .summary-item .s-name{flex:1}
@@ -59,22 +57,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .btn-secondary{background:#f0f0f0;color:#555;padding:14px 20px}
 .view{display:none}
 .view.active{display:block}
-.loading{position:fixed;inset:0;background:rgba(255,255,255,.9);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100}
-.loading .spinner{width:40px;height:40px;border:4px solid #f0f0f0;border-top-color:#E85D3A;border-radius:50%;animation:spin .6s linear infinite}
-.loading p{margin-top:12px;font-size:15px;color:#888}
+.overlay{position:fixed;inset:0;background:rgba(255,255,255,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100}
+.overlay .spinner{width:40px;height:40px;border:4px solid #f0f0f0;border-top-color:#E85D3A;border-radius:50%;animation:spin .6s linear infinite}
+.overlay p{margin-top:12px;font-size:15px;color:#888;text-align:center;padding:0 20px}
+.overlay .success-icon{font-size:60px;margin-bottom:8px}
 @keyframes spin{to{transform:rotate(360deg)}}
-.empty-msg{text-align:center;padding:40px 20px;color:#888;font-size:15px}
 </style>
 </head>
 <body>
 
-<div id="loading-init" class="loading">
-  <div class="spinner"></div>
-  <p>กำลังโหลด...</p>
-</div>
-
-<!-- ===== STEP 1: MENU ===== -->
-<div id="view-menu" class="view">
+<div id="view-menu" class="view active">
   <div class="header">
     <h1>🍱 เมนูอาหาร</h1>
     <span class="badge" id="item-count">0 รายการ</span>
@@ -89,7 +81,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
   </div>
 </div>
 
-<!-- ===== STEP 2: SUMMARY ===== -->
 <div id="view-summary" class="view">
   <div class="header" style="background:#27AE60">
     <h1>🧾 สรุปออเดอร์</h1>
@@ -122,14 +113,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
   </div>
 </div>
 
-<!-- ===== LOADING OVERLAY ===== -->
-<div id="loading-submit" class="loading" style="display:none">
+<div id="overlay-submit" class="overlay" style="display:none">
   <div class="spinner"></div>
   <p>กำลังส่งออเดอร์...</p>
 </div>
 
+<div id="overlay-done" class="overlay" style="display:none">
+  <div class="success-icon">✅</div>
+  <p id="done-msg">ส่งออเดอร์เรียบร้อย!<br>กลับไปที่ LINE เพื่อดู QR Code ชำระเงินครับ</p>
+</div>
+
 <script>
-const MENU = [
+const MENU=[
   {id:1,name:"ไข่เจียวหมูสับ",pork:60,beef:null},
   {id:2,name:"ผัดกะเพรา",pork:70,beef:80},
   {id:3,name:"น้ำมันหอย",pork:70,beef:80},
@@ -143,185 +138,103 @@ const MENU = [
   {id:11,name:"ผัดไข่เค็ม",pork:90,beef:100},
   {id:12,name:"เขียวหวานผัดแห้ง",pork:90,beef:100},
   {id:13,name:"ไข่ระเบิด",pork:90,beef:null},
-  {id:14,name:"ผัดผงกะหรี่",pork:90,beef:100},
+  {id:14,name:"ผัดผงกะหรี่",pork:90,beef:100}
 ];
 
-const ADDON_LIST = [
-  {id:"spoon",label:"ช้อนส้อม"},
-  {id:"chili",label:"พริกน้ำปลา"},
-  {id:"sauce",label:"ซอส"},
-];
+const qty={}, meat={}, addons=new Set();
+const TOKEN = new URLSearchParams(location.search).get("t");
 
-const qty = {};
-const meat = {};
-const addons = new Set();
-let userId = null;
-
-async function init() {
-  try {
-    const cfg = await fetch("/api/config").then(r => r.json());
-    if (cfg.liffId) {
-      await liff.init({ liffId: cfg.liffId });
-      if (liff.isInClient()) {
-        const profile = await liff.getProfile();
-        userId = profile.userId;
-      }
-    }
-  } catch (e) {
-    console.warn("LIFF init:", e);
-  }
-  renderMenu();
-  document.getElementById("loading-init").style.display = "none";
-  document.getElementById("view-menu").classList.add("active");
-}
-
-function changeQty(id, delta) {
-  const cur = qty[id] || 0;
-  const next = Math.max(0, Math.min(99, cur + delta));
-  if (next === 0) { delete qty[id]; }
-  else { qty[id] = next; if (!meat[id]) meat[id] = "pork"; }
+function changeQty(id,d){
+  const n=Math.max(0,Math.min(99,(qty[id]||0)+d));
+  if(n===0) delete qty[id]; else{qty[id]=n;if(!meat[id])meat[id]="pork";}
   renderMenu();
 }
-
-function setMeat(id, type) {
-  meat[id] = type;
-  renderMenu();
+function setMeat(id,t){meat[id]=t;renderMenu();}
+function toggleAddon(id){
+  if(addons.has(id))addons.delete(id);else addons.add(id);
+  document.getElementById("chk-"+id).classList.toggle("checked",addons.has(id));
 }
+function getPrice(item){const m=meat[item.id]||"pork";return m==="beef"&&item.beef?item.beef:item.pork;}
+function getTotal(){let t=0;Object.entries(qty).forEach(([id,q])=>{const i=MENU.find(m=>m.id===+id);if(i)t+=getPrice(i)*q;});return t;}
+function getItemCount(){return Object.values(qty).reduce((s,q)=>s+q,0);}
 
-function toggleAddon(id) {
-  if (addons.has(id)) addons.delete(id); else addons.add(id);
-  ADDON_LIST.forEach(a => {
-    const el = document.getElementById("chk-" + a.id);
-    el.classList.toggle("checked", addons.has(a.id));
-  });
-}
-
-function getPrice(item) {
-  const m = meat[item.id] || "pork";
-  return m === "beef" && item.beef ? item.beef : item.pork;
-}
-
-function getTotal() {
-  let t = 0;
-  Object.entries(qty).forEach(([id, q]) => {
-    const item = MENU.find(m => m.id === +id);
-    if (item) t += getPrice(item) * q;
-  });
-  return t;
-}
-
-function getItemCount() {
-  return Object.values(qty).reduce((s, q) => s + q, 0);
-}
-
-function renderMenu() {
-  const list = document.getElementById("menu-list");
-  list.innerHTML = MENU.map(item => {
-    const q = qty[item.id] || 0;
-    const m = meat[item.id] || "pork";
-    const hasQty = q > 0;
-
-    let bottomHtml;
-    if (item.beef !== null) {
-      bottomHtml = `<div class="meat-toggle">
+function renderMenu(){
+  document.getElementById("menu-list").innerHTML=MENU.map(item=>{
+    const q=qty[item.id]||0,m=meat[item.id]||"pork",has=q>0;
+    let bot;
+    if(item.beef!==null){
+      bot=`<div class="meat-toggle">
         <button class="meat-btn ${m==="pork"?"active-pork":""}" onclick="setMeat(${item.id},'pork')">หมู ${item.pork}.-</button>
         <button class="meat-btn ${m==="beef"?"active-beef":""}" onclick="setMeat(${item.id},'beef')">เนื้อ ${item.beef}.-</button>
       </div>`;
-    } else {
-      bottomHtml = `<span class="price-tag">${item.pork}.-</span>`;
-    }
-
-    return `<div class="menu-item ${hasQty?"has-qty":""}">
+    } else bot=`<span class="price-tag">${item.pork}.-</span>`;
+    return`<div class="menu-item ${has?"has-qty":""}">
       <div class="item-top">
         <span class="item-name">ข้าวราด ${item.name}</span>
         <div class="qty-ctrl">
           <button class="qty-btn minus" onclick="changeQty(${item.id},-1)" ${q===0?"disabled":""}>−</button>
-          <span class="qty-val ${hasQty?"active":""}">${q}</span>
+          <span class="qty-val ${has?"active":""}">${q}</span>
           <button class="qty-btn plus" onclick="changeQty(${item.id},1)">+</button>
         </div>
       </div>
-      <div class="item-bottom">${bottomHtml}</div>
+      <div class="item-bottom">${bot}</div>
     </div>`;
   }).join("");
-
-  const total = getTotal();
-  const count = getItemCount();
-  document.getElementById("menu-total").textContent = total + ".-";
-  document.getElementById("item-count").textContent = count + " รายการ";
-  const btn = document.getElementById("btn-to-summary");
-  btn.disabled = count === 0;
+  const t=getTotal(),c=getItemCount();
+  document.getElementById("menu-total").textContent=t+".-";
+  document.getElementById("item-count").textContent=c+" รายการ";
+  document.getElementById("btn-to-summary").disabled=c===0;
 }
 
-function getSelectedItems() {
-  return Object.entries(qty).map(([id, q]) => {
-    const item = MENU.find(m => m.id === +id);
-    const m = meat[id] || "pork";
-    const meatLabel = item.beef !== null ? (m === "beef" ? "เนื้อ" : "หมู") : null;
-    const price = getPrice(item);
-    const name = meatLabel ? `ข้าวราด ${item.name} ${meatLabel}` : `ข้าวราด ${item.name}`;
-    return { id: +id, name, meat: m, qty: q, unitPrice: price, totalPrice: price * q };
+function getSelectedItems(){
+  return Object.entries(qty).map(([id,q])=>{
+    const item=MENU.find(m=>m.id===+id),m=meat[id]||"pork";
+    const ml=item.beef!==null?(m==="beef"?"เนื้อ":"หมู"):null;
+    const p=getPrice(item);
+    return{id:+id,name:ml?`ข้าวราด ${item.name} ${ml}`:`ข้าวราด ${item.name}`,meat:m,qty:q,unitPrice:p,totalPrice:p*q};
   });
 }
 
-function goToSummary() {
-  const items = getSelectedItems();
-  const list = document.getElementById("summary-list");
-  list.innerHTML = items.map(item =>
-    `<div class="summary-item">
-      <span class="s-name">${item.name}</span>
-      <span class="s-qty">x${item.qty}</span>
-      <span class="s-price">${item.totalPrice}.-</span>
-    </div>`
+function goToSummary(){
+  const items=getSelectedItems();
+  document.getElementById("summary-list").innerHTML=items.map(i=>
+    `<div class="summary-item"><span class="s-name">${i.name}</span><span class="s-qty">x${i.qty}</span><span class="s-price">${i.totalPrice}.-</span></div>`
   ).join("");
-
-  document.getElementById("summary-total").textContent = getTotal() + ".-";
+  document.getElementById("summary-total").textContent=getTotal()+".-";
   document.getElementById("view-menu").classList.remove("active");
   document.getElementById("view-summary").classList.add("active");
-  window.scrollTo(0, 0);
+  window.scrollTo(0,0);
 }
 
-function goToMenu() {
+function goToMenu(){
   document.getElementById("view-summary").classList.remove("active");
   document.getElementById("view-menu").classList.add("active");
-  window.scrollTo(0, 0);
+  window.scrollTo(0,0);
 }
 
-async function submitOrder() {
-  const items = getSelectedItems();
-  if (items.length === 0) return;
-
-  const overlay = document.getElementById("loading-submit");
-  overlay.style.display = "flex";
-
-  try {
-    const body = {
-      userId: userId,
-      items: items,
-      addons: [...addons],
-      total: getTotal(),
-    };
-    const res = await fetch("/api/order", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+async function submitOrder(){
+  const items=getSelectedItems();
+  if(!items.length)return;
+  document.getElementById("overlay-submit").style.display="flex";
+  try{
+    const res=await fetch("/api/order",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({token:TOKEN,items,addons:[...addons],total:getTotal()})
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Server error");
-
-    if (typeof liff !== "undefined" && liff.isInClient()) {
-      liff.closeWindow();
-    } else {
-      overlay.querySelector("p").textContent =
-        "ส่งออเดอร์ #" + data.orderId + " เรียบร้อย! กลับไปดูที่ LINE ได้เลย";
-      overlay.querySelector(".spinner").style.display = "none";
-    }
-  } catch (e) {
-    overlay.style.display = "none";
-    alert("เกิดข้อผิดพลาด: " + e.message);
+    const data=await res.json();
+    if(!res.ok)throw new Error(data.error||"Server error");
+    document.getElementById("overlay-submit").style.display="none";
+    document.getElementById("done-msg").innerHTML=
+      "ส่งออเดอร์ <b>#"+data.orderId+"</b> เรียบร้อย!<br>กลับไปที่ LINE เพื่อดู QR Code ชำระเงินครับ";
+    document.getElementById("overlay-done").style.display="flex";
+  }catch(e){
+    document.getElementById("overlay-submit").style.display="none";
+    alert("เกิดข้อผิดพลาด: "+e.message);
   }
 }
 
-init();
+renderMenu();
 </script>
 </body>
 </html>

@@ -1,4 +1,5 @@
 const express = require("express");
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { middleware, messagingApi } = require("@line/bot-sdk");
@@ -10,7 +11,6 @@ const config = {
 };
 const ADMIN_ID = process.env.ADMIN_USER_ID;
 const BASE_URL = process.env.BASE_URL;
-const LIFF_ID = process.env.LIFF_ID;
 
 const client = new messagingApi.MessagingApiClient({
   channelAccessToken: config.channelAccessToken,
@@ -27,10 +27,11 @@ const ADDONS = [
   { id: "sauce", label: "ซอส" },
 ];
 
-// ==================== Session & Orders ====================
+// ==================== Session, Orders, Tokens ====================
 
 const sessions = new Map();
 const pendingOrders = new Map();
+const orderTokens = new Map();
 let orderCounter = 0;
 
 function getSession(userId) {
@@ -38,6 +39,12 @@ function getSession(userId) {
     sessions.set(userId, { state: "idle", orderId: null });
   }
   return sessions.get(userId);
+}
+
+function createToken(userId) {
+  const token = crypto.randomBytes(16).toString("hex");
+  orderTokens.set(token, { userId, createdAt: Date.now() });
+  return token;
 }
 
 // ==================== Express ====================
@@ -49,17 +56,21 @@ app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/", (_req, res) => res.send("MGR LINE Chatbot is running!"));
 
-app.get("/api/config", (_req, res) => {
-  res.json({ liffId: LIFF_ID || "" });
-});
-
-// ==================== API: รับออเดอร์จาก LIFF ====================
+// ==================== API: รับออเดอร์จากเว็บ ====================
 
 app.post("/api/order", express.json(), async (req, res) => {
   try {
-    const { userId, items, addons, total } = req.body;
-    if (!userId || !items || items.length === 0) {
-      return res.status(400).json({ error: "ข้อมูลไม่ครบ" });
+    const { token, items, addons, total } = req.body;
+
+    const tokenData = orderTokens.get(token);
+    if (!tokenData) {
+      return res.status(401).json({ error: "ลิงก์หมดอายุ กรุณากดปุ่ม Food อีกครั้ง" });
+    }
+    const userId = tokenData.userId;
+    orderTokens.delete(token);
+
+    if (!items || items.length === 0) {
+      return res.status(400).json({ error: "กรุณาเลือกอย่างน้อย 1 เมนู" });
     }
 
     orderCounter++;
@@ -80,8 +91,6 @@ app.post("/api/order", express.json(), async (req, res) => {
 
     pendingOrders.set(orderId, {
       userId,
-      items,
-      addons: addons || [],
       summary,
       total,
       state: "await_slip",
@@ -97,7 +106,7 @@ app.post("/api/order", express.json(), async (req, res) => {
       messages: [
         {
           type: "flex",
-          altText: `💳 กรุณาโอนเงิน ${total} บาท - ออเดอร์ #${orderId}`,
+          altText: `💳 กรุณาโอนเงิน ${total} บาท - #${orderId}`,
           contents: {
             type: "bubble",
             header: {
@@ -136,13 +145,7 @@ app.post("/api/order", express.json(), async (req, res) => {
                   align: "center",
                 },
                 { type: "separator" },
-                {
-                  type: "text",
-                  text: summary,
-                  size: "sm",
-                  color: "#666666",
-                  wrap: true,
-                },
+                { type: "text", text: summary, size: "sm", color: "#666", wrap: true },
                 {
                   type: "text",
                   text: `💰 รวม: ${total}.-`,
@@ -238,12 +241,10 @@ async function handleEvent(event) {
   }
 
   if (event.type === "message") {
-    if (event.message.type === "image") {
+    if (event.message.type === "image")
       return handleImage(event.replyToken, userId, event.message.id);
-    }
-    if (event.message.type === "text") {
+    if (event.message.type === "text")
       return handleText(event.replyToken, userId, event.message.text.trim());
-    }
   }
 
   return null;
@@ -256,22 +257,18 @@ async function handleText(replyToken, userId, text) {
 
   if (session.state === "await_slip") {
     return reply(replyToken, [
-      {
-        type: "text",
-        text: "📸 กรุณาส่งรูปสลิปการโอนเงินมาเลยครับ",
-      },
+      { type: "text", text: "📸 กรุณาส่งรูปสลิปการโอนเงินมาเลยครับ" },
     ]);
   }
 
   if (text === "อาหาร" || text === "เมนูอาหาร" || text === "สั่งอาหาร") {
-    const liffUrl = LIFF_ID
-      ? `https://liff.line.me/${LIFF_ID}`
-      : `${BASE_URL}/order.html`;
+    const token = createToken(userId);
+    const orderUrl = `${BASE_URL}/order.html?t=${token}`;
 
     return reply(replyToken, [
       {
         type: "flex",
-        altText: "🍱 กดเพื่อสั่งอาหาร",
+        altText: "🍱 กดเพื่อเปิดเมนูอาหาร",
         contents: {
           type: "bubble",
           body: {
@@ -280,18 +277,19 @@ async function handleText(replyToken, userId, text) {
             contents: [
               {
                 type: "text",
-                text: "🍱 สั่งอาหาร MGR",
+                text: "🍱 MGR สั่งอาหาร",
                 weight: "bold",
-                size: "lg",
+                size: "xl",
                 align: "center",
               },
               {
                 type: "text",
-                text: "กดปุ่มด้านล่างเพื่อเปิดเมนู",
+                text: "เลือกเมนู กดจำนวน ยืนยัน\nจบในหน้าเดียว!",
                 size: "sm",
                 color: "#888",
                 align: "center",
-                margin: "sm",
+                margin: "md",
+                wrap: true,
               },
             ],
             paddingAll: "20px",
@@ -304,10 +302,11 @@ async function handleText(replyToken, userId, text) {
                 type: "button",
                 style: "primary",
                 color: "#E85D3A",
+                height: "md",
                 action: {
                   type: "uri",
-                  label: "เปิดเมนูอาหาร",
-                  uri: liffUrl,
+                  label: "🍱 เปิดเมนูอาหาร",
+                  uri: orderUrl,
                 },
               },
             ],
@@ -348,10 +347,7 @@ async function handleImage(replyToken, userId, messageId) {
 
   if (session.state !== "await_slip" || !session.orderId) {
     return reply(replyToken, [
-      {
-        type: "text",
-        text: "📸 หากต้องการส่งสลิป กรุณาสั่งอาหารก่อนนะครับ",
-      },
+      { type: "text", text: "📸 หากต้องการส่งสลิป กรุณาสั่งอาหารก่อนนะครับ" },
     ]);
   }
 
@@ -388,7 +384,7 @@ async function handleImage(replyToken, userId, messageId) {
         messages: [
           {
             type: "flex",
-            altText: `💳 สลิปออเดอร์ #${orderId} - รวม ${order.total}.-`,
+            altText: `💳 สลิป #${orderId} - รวม ${order.total}.-`,
             contents: {
               type: "bubble",
               header: {
@@ -418,12 +414,7 @@ async function handleImage(replyToken, userId, messageId) {
                 layout: "vertical",
                 spacing: "sm",
                 contents: [
-                  {
-                    type: "text",
-                    text: order.summary,
-                    size: "sm",
-                    wrap: true,
-                  },
+                  { type: "text", text: order.summary, size: "sm", wrap: true },
                   { type: "separator", margin: "md" },
                   {
                     type: "text",
@@ -498,9 +489,7 @@ async function handlePostback(replyToken, userId, data) {
     const orderId = params.get("oid");
     const order = pendingOrders.get(orderId);
     if (!order)
-      return reply(replyToken, [
-        { type: "text", text: `❌ ไม่พบออเดอร์ #${orderId}` },
-      ]);
+      return reply(replyToken, [{ type: "text", text: `❌ ไม่พบออเดอร์ #${orderId}` }]);
 
     const cs = getSession(order.userId);
     cs.state = "idle";
@@ -518,10 +507,7 @@ async function handlePostback(replyToken, userId, data) {
     });
 
     return reply(replyToken, [
-      {
-        type: "text",
-        text: `✅ ยืนยัน #${orderId} แล้ว — แจ้งลูกค้าเรียบร้อย`,
-      },
+      { type: "text", text: `✅ ยืนยัน #${orderId} แล้ว — แจ้งลูกค้าเรียบร้อย` },
     ]);
   }
 
@@ -529,12 +515,9 @@ async function handlePostback(replyToken, userId, data) {
     const orderId = params.get("oid");
     const order = pendingOrders.get(orderId);
     if (!order)
-      return reply(replyToken, [
-        { type: "text", text: `❌ ไม่พบออเดอร์ #${orderId}` },
-      ]);
+      return reply(replyToken, [{ type: "text", text: `❌ ไม่พบออเดอร์ #${orderId}` }]);
 
-    const cs = getSession(order.userId);
-    cs.state = "await_slip";
+    getSession(order.userId).state = "await_slip";
 
     await client.pushMessage({
       to: order.userId,
@@ -547,10 +530,7 @@ async function handlePostback(replyToken, userId, data) {
     });
 
     return reply(replyToken, [
-      {
-        type: "text",
-        text: `❌ ปฏิเสธ #${orderId} — แจ้งลูกค้าแล้ว`,
-      },
+      { type: "text", text: `❌ ปฏิเสธ #${orderId} — แจ้งลูกค้าแล้ว` },
     ]);
   }
 }
