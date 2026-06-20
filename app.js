@@ -34,6 +34,8 @@ const pendingOrders = new Map();
 const orderTokens = new Map();
 let orderCounter = 0;
 
+const TOKEN_TTL = 30 * 60 * 1000;
+
 function getSession(userId) {
   if (!sessions.has(userId)) {
     sessions.set(userId, { state: "idle", orderId: null });
@@ -46,6 +48,13 @@ function createToken(userId) {
   orderTokens.set(token, { userId, createdAt: Date.now() });
   return token;
 }
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, data] of orderTokens) {
+    if (now - data.createdAt > TOKEN_TTL) orderTokens.delete(token);
+  }
+}, 5 * 60 * 1000);
 
 // ==================== Express ====================
 
@@ -65,6 +74,10 @@ app.post("/api/order", express.json(), async (req, res) => {
 
     const tokenData = orderTokens.get(token);
     if (!tokenData) {
+      return res.status(401).json({ error: "ลิงก์หมดอายุ กรุณากดปุ่ม Food อีกครั้ง" });
+    }
+    if (Date.now() - tokenData.createdAt > TOKEN_TTL) {
+      orderTokens.delete(token);
       return res.status(401).json({ error: "ลิงก์หมดอายุ กรุณากดปุ่ม Food อีกครั้ง" });
     }
     const userId = tokenData.userId;
@@ -90,6 +103,14 @@ app.post("/api/order", express.json(), async (req, res) => {
     }
     const summary = summaryLines.join("\n");
 
+    const session = getSession(userId);
+    if (session.orderId && pendingOrders.has(session.orderId)) {
+      const oldOrder = pendingOrders.get(session.orderId);
+      if (oldOrder.state === "await_slip") {
+        pendingOrders.delete(session.orderId);
+      }
+    }
+
     pendingOrders.set(orderId, {
       userId,
       summary,
@@ -97,7 +118,6 @@ app.post("/api/order", express.json(), async (req, res) => {
       state: "await_slip",
     });
 
-    const session = getSession(userId);
     session.state = "await_slip";
     session.orderId = orderId;
 
@@ -179,7 +199,7 @@ app.post("/api/order", express.json(), async (req, res) => {
                   action: {
                     type: "postback",
                     label: "❌ ยกเลิกออเดอร์",
-                    data: "a=cancel",
+                    data: `a=cancel&oid=${orderId}`,
                     displayText: "ยกเลิกออเดอร์",
                   },
                 },
@@ -259,6 +279,12 @@ async function handleText(replyToken, userId, text) {
   if (session.state === "await_slip") {
     return reply(replyToken, [
       { type: "text", text: "📸 กรุณาส่งรูปสลิปการโอนเงินมาเลยครับ" },
+    ]);
+  }
+
+  if (session.state === "await_confirm") {
+    return reply(replyToken, [
+      { type: "text", text: "⏳ รอร้านค้ายืนยันการชำระเงินอยู่นะครับ กรุณารอสักครู่" },
     ]);
   }
 
@@ -477,10 +503,27 @@ async function handlePostback(replyToken, userId, data) {
   const action = params.get("a");
 
   if (action === "cancel") {
+    const oid = params.get("oid");
     const session = getSession(userId);
-    if (session.orderId) pendingOrders.delete(session.orderId);
-    session.state = "idle";
-    session.orderId = null;
+
+    if (oid && pendingOrders.has(oid)) {
+      const order = pendingOrders.get(oid);
+      if (order.state === "confirmed") {
+        return reply(replyToken, [
+          { type: "text", text: `⚠️ ออเดอร์ #${oid} ยืนยันแล้ว ไม่สามารถยกเลิกได้` },
+        ]);
+      }
+      pendingOrders.delete(oid);
+      if (session.orderId === oid) {
+        session.state = "idle";
+        session.orderId = null;
+      }
+    } else {
+      if (session.orderId) pendingOrders.delete(session.orderId);
+      session.state = "idle";
+      session.orderId = null;
+    }
+
     return reply(replyToken, [
       { type: "text", text: "❌ ยกเลิกออเดอร์แล้วครับ" },
     ]);
@@ -565,7 +608,7 @@ async function handlePostback(replyToken, userId, data) {
     const orderId = params.get("oid");
     const order = pendingOrders.get(orderId);
     if (!order)
-      return reply(replyToken, [{ type: "text", text: `❌ ไม่พบออเดอร์ #${orderId}` }]);
+      return reply(replyToken, [{ type: "text", text: `❌ ออเดอร์ #${orderId} ถูกจัดการไปแล้ว` }]);
 
     const wasConfirmed = order.state === "confirmed";
     const cs = getSession(order.userId);
