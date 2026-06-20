@@ -1,4 +1,6 @@
 const express = require("express");
+const fs = require("fs");
+const path = require("path");
 const { middleware, messagingApi } = require("@line/bot-sdk");
 require("dotenv").config();
 
@@ -6,8 +8,13 @@ const config = {
   channelSecret: process.env.CHANNEL_SECRET,
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
 };
+const ADMIN_ID = process.env.ADMIN_USER_ID;
+const BASE_URL = process.env.BASE_URL;
 
 const client = new messagingApi.MessagingApiClient({
+  channelAccessToken: config.channelAccessToken,
+});
+const blobClient = new messagingApi.MessagingApiBlobClient({
   channelAccessToken: config.channelAccessToken,
 });
 
@@ -38,20 +45,41 @@ const EXTRAS = [
   { id: "none", label: "ไม่เพิ่มอะไร", price: 0 },
 ];
 
-// ==================== Session ====================
+// ==================== Session & Orders ====================
 
 const sessions = new Map();
+const pendingOrders = new Map();
+let orderCounter = 0;
 
 function getSession(userId) {
   if (!sessions.has(userId)) {
-    sessions.set(userId, { state: "idle", currentItem: null, cart: [] });
+    sessions.set(userId, {
+      state: "idle",
+      currentItem: null,
+      cart: [],
+      orderId: null,
+    });
   }
   return sessions.get(userId);
+}
+
+function buildSummaryText(cart) {
+  let total = 0;
+  const lines = cart.map((item, i) => {
+    total += item.totalPrice;
+    let line = `${i + 1}. ${item.name}`;
+    if (item.extra) line += ` + ${item.extra}`;
+    line += ` = ${item.totalPrice}.-`;
+    return line;
+  });
+  return { text: lines.join("\n"), total };
 }
 
 // ==================== Express ====================
 
 const app = express();
+
+app.use("/images", express.static(path.join(__dirname, "images")));
 
 app.get("/", (_req, res) => res.send("MGR LINE Chatbot is running!"));
 
@@ -86,8 +114,13 @@ async function handleEvent(event) {
     return handlePostback(event.replyToken, userId, event.postback.data);
   }
 
-  if (event.type === "message" && event.message.type === "text") {
-    return handleText(event.replyToken, userId, event.message.text.trim());
+  if (event.type === "message") {
+    if (event.message.type === "image") {
+      return handleImage(event.replyToken, userId, event.message.id);
+    }
+    if (event.message.type === "text") {
+      return handleText(event.replyToken, userId, event.message.text.trim());
+    }
   }
 
   return null;
@@ -97,6 +130,28 @@ async function handleEvent(event) {
 
 async function handleText(replyToken, userId, text) {
   const session = getSession(userId);
+
+  if (session.state === "await_slip") {
+    return reply(replyToken, [
+      {
+        type: "text",
+        text: "📸 กรุณาส่งรูปสลิปการโอนเงินมาเลยครับ\nหรือกด \"ยกเลิกออเดอร์\" เพื่อยกเลิก",
+        quickReply: {
+          items: [
+            {
+              type: "action",
+              action: {
+                type: "postback",
+                label: "❌ ยกเลิกออเดอร์",
+                data: "a=cancel",
+                displayText: "ยกเลิกออเดอร์",
+              },
+            },
+          ],
+        },
+      },
+    ]);
+  }
 
   if (text === "อาหาร" || text === "เมนูอาหาร") {
     session.state = "idle";
@@ -127,6 +182,147 @@ async function handleText(replyToken, userId, text) {
   ]);
 }
 
+// ==================== Image Handler (รับสลิป) ====================
+
+async function handleImage(replyToken, userId, messageId) {
+  const session = getSession(userId);
+
+  if (session.state !== "await_slip" || !session.orderId) {
+    return reply(replyToken, [
+      { type: "text", text: "📸 หากต้องการส่งสลิป กรุณาสั่งอาหารก่อนนะครับ" },
+    ]);
+  }
+
+  const order = pendingOrders.get(session.orderId);
+  if (!order) return;
+
+  const orderId = session.orderId;
+
+  try {
+    const stream = await blobClient.getMessageContent(messageId);
+    const chunks = [];
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+    const buffer = Buffer.concat(chunks);
+
+    const slipDir = path.join(__dirname, "images", "slips");
+    if (!fs.existsSync(slipDir)) fs.mkdirSync(slipDir, { recursive: true });
+
+    const slipFile = `${orderId}.jpg`;
+    fs.writeFileSync(path.join(slipDir, slipFile), buffer);
+
+    const slipUrl = `${BASE_URL}/images/slips/${slipFile}`;
+    order.slipUrl = slipUrl;
+    order.state = "slip_sent";
+
+    session.state = "await_confirm";
+
+    await reply(replyToken, [
+      {
+        type: "text",
+        text: "✅ ได้รับสลิปแล้วครับ\nรอการยืนยันจากร้านค้าสักครู่นะครับ 🙏",
+      },
+    ]);
+
+    if (ADMIN_ID) {
+      const adminBubble = {
+        type: "bubble",
+        header: {
+          type: "box",
+          layout: "vertical",
+          contents: [
+            {
+              type: "text",
+              text: `💳 สลิปออเดอร์ #${orderId}`,
+              weight: "bold",
+              size: "lg",
+              color: "#E85D3A",
+            },
+          ],
+          backgroundColor: "#FFF8E7",
+          paddingAll: "15px",
+        },
+        hero: {
+          type: "image",
+          url: slipUrl,
+          size: "full",
+          aspectRatio: "1:1.4",
+          aspectMode: "fit",
+        },
+        body: {
+          type: "box",
+          layout: "vertical",
+          spacing: "sm",
+          contents: [
+            {
+              type: "text",
+              text: order.summary,
+              size: "sm",
+              wrap: true,
+            },
+            { type: "separator", margin: "md" },
+            {
+              type: "text",
+              text: `💰 รวม: ${order.total}.-`,
+              weight: "bold",
+              size: "md",
+              color: "#E85D3A",
+              margin: "md",
+            },
+          ],
+          paddingAll: "15px",
+        },
+        footer: {
+          type: "box",
+          layout: "vertical",
+          contents: [
+            {
+              type: "button",
+              style: "primary",
+              color: "#27AE60",
+              action: {
+                type: "postback",
+                label: "✅ ยืนยันการชำระเงิน",
+                data: `a=admin_confirm&oid=${orderId}`,
+                displayText: `ยืนยันการชำระเงิน ออเดอร์ #${orderId}`,
+              },
+            },
+            {
+              type: "button",
+              style: "secondary",
+              margin: "sm",
+              action: {
+                type: "postback",
+                label: "❌ ปฏิเสธ",
+                data: `a=admin_reject&oid=${orderId}`,
+                displayText: `ปฏิเสธ ออเดอร์ #${orderId}`,
+              },
+            },
+          ],
+          paddingAll: "15px",
+        },
+      };
+
+      await client.pushMessage({
+        to: ADMIN_ID,
+        messages: [
+          {
+            type: "flex",
+            altText: `💳 สลิปออเดอร์ #${orderId} - รวม ${order.total}.-`,
+            contents: adminBubble,
+          },
+        ],
+      });
+    }
+  } catch (err) {
+    console.error("Slip handling error:", err.message);
+    return reply(replyToken, [
+      { type: "text", text: "❌ เกิดข้อผิดพลาด กรุณาส่งสลิปอีกครั้งครับ" },
+    ]);
+  }
+}
+
 // ==================== Postback Handler ====================
 
 async function handlePostback(replyToken, userId, data) {
@@ -134,6 +330,7 @@ async function handlePostback(replyToken, userId, data) {
   const action = params.get("a");
   const session = getSession(userId);
 
+  // --- ขั้นตอน 1: เลือกเมนู ---
   if (action === "menu") {
     const item = MENU.find((m) => m.id === +params.get("id"));
     if (!item) return;
@@ -154,6 +351,7 @@ async function handlePostback(replyToken, userId, data) {
     return showExtras(replyToken, `ข้าวราด ${item.name}`, item.pork);
   }
 
+  // --- ขั้นตอน 2: เลือกเนื้อสัตว์ ---
   if (action === "meat") {
     const meat = params.get("t");
     const item = MENU.find((m) => m.id === session.currentItem.id);
@@ -167,6 +365,7 @@ async function handlePostback(replyToken, userId, data) {
     return showExtras(replyToken, `ข้าวราด ${item.name} ${meatLabel}`, price);
   }
 
+  // --- ขั้นตอน 3: เลือกเพิ่มเติม ---
   if (action === "extra") {
     const extra = EXTRAS.find((e) => e.id === params.get("id"));
     const cur = session.currentItem;
@@ -189,23 +388,40 @@ async function handlePostback(replyToken, userId, data) {
     return showOrderSummary(replyToken, session);
   }
 
+  // --- สั่งเพิ่ม ---
   if (action === "more") {
     session.state = "idle";
     session.currentItem = null;
     return showFoodMenu(replyToken);
   }
 
+  // --- ขั้นตอน 4→5: ยืนยัน → แสดง QR ---
   if (action === "confirm") {
-    return confirmOrder(replyToken, userId, session);
+    return confirmAndShowPayment(replyToken, userId, session);
   }
 
+  // --- ยกเลิก ---
   if (action === "cancel") {
+    if (session.orderId) {
+      pendingOrders.delete(session.orderId);
+    }
     session.cart = [];
     session.state = "idle";
     session.currentItem = null;
+    session.orderId = null;
     return reply(replyToken, [
       { type: "text", text: "❌ ยกเลิกออเดอร์แล้วครับ" },
     ]);
+  }
+
+  // --- ขั้นตอน 7: แอดมินยืนยันการชำระเงิน ---
+  if (action === "admin_confirm") {
+    return adminConfirmPayment(replyToken, params.get("oid"));
+  }
+
+  // --- แอดมินปฏิเสธ ---
+  if (action === "admin_reject") {
+    return adminRejectPayment(replyToken, params.get("oid"));
   }
 }
 
@@ -400,8 +616,7 @@ function showExtras(replyToken, itemName, basePrice) {
           type: "action",
           action: {
             type: "postback",
-            label:
-              ex.price > 0 ? `${ex.label} +${ex.price}.-` : ex.label,
+            label: ex.price > 0 ? `${ex.label} +${ex.price}.-` : ex.label,
             data: `a=extra&id=${ex.id}`,
             displayText:
               ex.price > 0 ? `เพิ่ม ${ex.label} (+${ex.price}.-)` : ex.label,
@@ -588,32 +803,108 @@ function showOrderSummary(replyToken, session) {
   ]);
 }
 
-// ==================== ยืนยันออเดอร์ → แจ้งแอดมิน ====================
+// ==================== ขั้นตอน 5: ยืนยัน → แสดง QR Code ====================
 
-async function confirmOrder(replyToken, userId, session) {
-  const cart = session.cart;
-  let grandTotal = 0;
+async function confirmAndShowPayment(replyToken, userId, session) {
+  const { text: summary, total } = buildSummaryText(session.cart);
 
-  let lines = [];
-  cart.forEach((item, i) => {
-    grandTotal += item.totalPrice;
-    let line = `${i + 1}. ${item.name}`;
-    if (item.extra) line += ` + ${item.extra}`;
-    line += ` = ${item.totalPrice}.-`;
-    lines.push(line);
+  orderCounter++;
+  const orderId = `MGR${String(orderCounter).padStart(4, "0")}`;
+
+  pendingOrders.set(orderId, {
+    userId,
+    cart: [...session.cart],
+    summary,
+    total,
+    state: "await_slip",
   });
 
-  const summary = lines.join("\n");
+  session.state = "await_slip";
+  session.orderId = orderId;
 
-  const adminId = process.env.ADMIN_USER_ID;
-  if (adminId) {
+  const qrUrl = `${BASE_URL}/images/qr-payment.jpg`;
+
+  const paymentBubble = {
+    type: "bubble",
+    header: {
+      type: "box",
+      layout: "vertical",
+      contents: [
+        {
+          type: "text",
+          text: `💳 ชำระเงิน #${orderId}`,
+          weight: "bold",
+          size: "lg",
+          color: "#27AE60",
+        },
+      ],
+      backgroundColor: "#F0FFF0",
+      paddingAll: "15px",
+    },
+    hero: {
+      type: "image",
+      url: qrUrl,
+      size: "full",
+      aspectRatio: "1:1",
+      aspectMode: "fit",
+    },
+    body: {
+      type: "box",
+      layout: "vertical",
+      spacing: "md",
+      contents: [
+        {
+          type: "text",
+          text: `กรุณาโอนเงิน ${total} บาท\nมายัง PromptPay ของร้าน`,
+          size: "md",
+          weight: "bold",
+          wrap: true,
+          align: "center",
+        },
+        { type: "separator" },
+        {
+          type: "text",
+          text: summary,
+          size: "sm",
+          color: "#666666",
+          wrap: true,
+        },
+        {
+          type: "text",
+          text: `💰 รวม: ${total}.-`,
+          weight: "bold",
+          color: "#E85D3A",
+          margin: "sm",
+        },
+      ],
+      paddingAll: "15px",
+    },
+    footer: {
+      type: "box",
+      layout: "vertical",
+      contents: [
+        {
+          type: "text",
+          text: "📸 โอนเสร็จแล้ว ส่งรูปสลิปมาเลยครับ",
+          size: "sm",
+          color: "#27AE60",
+          align: "center",
+          weight: "bold",
+          wrap: true,
+        },
+      ],
+      paddingAll: "15px",
+    },
+  };
+
+  if (ADMIN_ID) {
     try {
       await client.pushMessage({
-        to: adminId,
+        to: ADMIN_ID,
         messages: [
           {
             type: "text",
-            text: `📋 ออเดอร์ใหม่!\n\n${summary}\n\n💰 รวม: ${grandTotal}.-\n👤 User: ${userId}`,
+            text: `📋 ออเดอร์ใหม่ #${orderId}\n\n${summary}\n\n💰 รวม: ${total}.-\n⏳ รอชำระเงิน`,
           },
         ],
       });
@@ -622,14 +913,84 @@ async function confirmOrder(replyToken, userId, session) {
     }
   }
 
-  session.cart = [];
-  session.state = "idle";
-  session.currentItem = null;
+  return reply(replyToken, [
+    {
+      type: "flex",
+      altText: `💳 กรุณาโอนเงิน ${total} บาท - ออเดอร์ #${orderId}`,
+      contents: paymentBubble,
+    },
+  ]);
+}
+
+// ==================== ขั้นตอน 7: แอดมินยืนยัน/ปฏิเสธ ====================
+
+async function adminConfirmPayment(replyToken, orderId) {
+  const order = pendingOrders.get(orderId);
+  if (!order) {
+    return reply(replyToken, [
+      { type: "text", text: `❌ ไม่พบออเดอร์ #${orderId}` },
+    ]);
+  }
+
+  const customerSession = getSession(order.userId);
+  customerSession.cart = [];
+  customerSession.state = "idle";
+  customerSession.currentItem = null;
+  customerSession.orderId = null;
+
+  pendingOrders.delete(orderId);
+
+  try {
+    await client.pushMessage({
+      to: order.userId,
+      messages: [
+        {
+          type: "text",
+          text: `✅ ชำระเงินเรียบร้อยแล้ว!\n\n📋 ออเดอร์ #${orderId}\n${order.summary}\n💰 รวม: ${order.total}.-\n\nกำลังเตรียมอาหารให้นะครับ 🍱`,
+        },
+      ],
+    });
+  } catch (err) {
+    console.error("Failed to notify customer:", err.message);
+  }
 
   return reply(replyToken, [
     {
       type: "text",
-      text: `✅ ยืนยันออเดอร์เรียบร้อยครับ!\n\n${summary}\n\n💰 รวม: ${grandTotal}.-\n\nกรุณารอสักครู่นะครับ 🙏`,
+      text: `✅ ยืนยันชำระเงินออเดอร์ #${orderId} แล้ว\nแจ้งลูกค้าเรียบร้อย`,
+    },
+  ]);
+}
+
+async function adminRejectPayment(replyToken, orderId) {
+  const order = pendingOrders.get(orderId);
+  if (!order) {
+    return reply(replyToken, [
+      { type: "text", text: `❌ ไม่พบออเดอร์ #${orderId}` },
+    ]);
+  }
+
+  const customerSession = getSession(order.userId);
+  customerSession.state = "await_slip";
+
+  try {
+    await client.pushMessage({
+      to: order.userId,
+      messages: [
+        {
+          type: "text",
+          text: `❌ สลิปออเดอร์ #${orderId} ยังไม่ผ่านการตรวจสอบ\n\nกรุณาโอนเงิน ${order.total} บาท แล้วส่งสลิปใหม่อีกครั้งครับ`,
+        },
+      ],
+    });
+  } catch (err) {
+    console.error("Failed to notify customer:", err.message);
+  }
+
+  return reply(replyToken, [
+    {
+      type: "text",
+      text: `❌ ปฏิเสธสลิปออเดอร์ #${orderId}\nแจ้งลูกค้าให้ส่งสลิปใหม่แล้ว`,
     },
   ]);
 }
