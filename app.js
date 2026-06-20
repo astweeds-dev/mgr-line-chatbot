@@ -428,109 +428,104 @@ async function handlePostback(replyToken, userId, data) {
 // ==================== ขั้นตอน 1: แสดงเมนูอาหาร ====================
 
 function showFoodMenu(replyToken) {
-  const perPage = 7;
-  const bubbles = [];
+  const rows = [];
 
-  for (let i = 0; i < MENU.length; i += perPage) {
-    const chunk = MENU.slice(i, i + perPage);
-    const page = Math.floor(i / perPage) + 1;
-    const totalPages = Math.ceil(MENU.length / perPage);
+  MENU.forEach((item, i) => {
+    if (i > 0) rows.push({ type: "separator", color: "#EEEEEE" });
 
-    bubbles.push({
-      type: "bubble",
-      size: "mega",
-      header: {
-        type: "box",
-        layout: "horizontal",
-        contents: [
-          {
-            type: "text",
-            text: "🍱 เมนูอาหาร",
-            weight: "bold",
-            size: "lg",
-            color: "#E85D3A",
-            flex: 7,
+    const priceText =
+      item.beef !== null
+        ? `หมู ${item.pork}.- / เนื้อ ${item.beef}.-`
+        : `${item.pork}.-`;
+
+    rows.push({
+      type: "box",
+      layout: "horizontal",
+      spacing: "md",
+      alignItems: "center",
+      contents: [
+        {
+          type: "box",
+          layout: "vertical",
+          flex: 7,
+          contents: [
+            {
+              type: "text",
+              text: `ข้าวราด ${item.name}`,
+              size: "sm",
+              weight: "bold",
+              wrap: true,
+            },
+            {
+              type: "text",
+              text: priceText,
+              size: "xs",
+              color: "#888888",
+            },
+          ],
+        },
+        {
+          type: "button",
+          style: "primary",
+          color: "#E85D3A",
+          height: "sm",
+          flex: 3,
+          action: {
+            type: "postback",
+            label: "สั่ง",
+            data: `a=menu&id=${item.id}`,
+            displayText: `สั่ง ข้าวราด ${item.name}`,
           },
-          {
-            type: "text",
-            text: `${page}/${totalPages}`,
-            size: "sm",
-            color: "#999999",
-            align: "end",
-            flex: 3,
-            gravity: "center",
-          },
-        ],
-        backgroundColor: "#FFF8E7",
-        paddingAll: "15px",
-      },
-      body: {
-        type: "box",
-        layout: "vertical",
-        spacing: "sm",
-        contents: chunk.map((item) => {
-          const priceText =
-            item.beef !== null
-              ? `หมู ${item.pork}.- | เนื้อ ${item.beef}.-`
-              : `${item.pork}.-`;
-
-          return {
-            type: "box",
-            layout: "horizontal",
-            spacing: "md",
-            contents: [
-              {
-                type: "box",
-                layout: "vertical",
-                flex: 7,
-                justifyContent: "center",
-                contents: [
-                  {
-                    type: "text",
-                    text: `ข้าวราด ${item.name}`,
-                    size: "sm",
-                    weight: "bold",
-                    wrap: true,
-                  },
-                  {
-                    type: "text",
-                    text: priceText,
-                    size: "xs",
-                    color: "#888888",
-                  },
-                ],
-              },
-              {
-                type: "button",
-                style: "primary",
-                color: "#E85D3A",
-                height: "sm",
-                flex: 3,
-                action: {
-                  type: "postback",
-                  label: "สั่ง",
-                  data: `a=menu&id=${item.id}`,
-                  displayText: `สั่ง ข้าวราด ${item.name}`,
-                },
-              },
-            ],
-            paddingAll: "8px",
-            backgroundColor: "#FFFFFF",
-            borderWidth: "1px",
-            borderColor: "#F0F0F0",
-            cornerRadius: "8px",
-          };
-        }),
-        paddingAll: "12px",
-      },
+        },
+      ],
+      paddingTop: "10px",
+      paddingBottom: "10px",
+      paddingStart: "15px",
+      paddingEnd: "15px",
     });
-  }
+  });
+
+  const bubble = {
+    type: "bubble",
+    size: "mega",
+    header: {
+      type: "box",
+      layout: "horizontal",
+      contents: [
+        {
+          type: "text",
+          text: "🍱 เมนูอาหาร",
+          weight: "bold",
+          size: "xl",
+          color: "#E85D3A",
+          flex: 7,
+        },
+        {
+          type: "text",
+          text: `${MENU.length} รายการ`,
+          size: "xs",
+          color: "#999999",
+          align: "end",
+          flex: 3,
+          gravity: "center",
+        },
+      ],
+      backgroundColor: "#FFF8E7",
+      paddingAll: "15px",
+    },
+    body: {
+      type: "box",
+      layout: "vertical",
+      contents: rows,
+      paddingAll: "0px",
+    },
+  };
 
   return reply(replyToken, [
     {
       type: "flex",
       altText: "🍱 เมนูอาหาร - กดเลือกเมนูที่ต้องการ",
-      contents: { type: "carousel", contents: bubbles },
+      contents: bubble,
     },
   ]);
 }
