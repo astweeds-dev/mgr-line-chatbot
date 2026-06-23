@@ -1,0 +1,343 @@
+const { spawn, execSync } = require("child_process");
+const fs = require("fs");
+const path = require("path");
+const https = require("https");
+const http = require("http");
+
+const DIR = __dirname;
+const DATA_DIR = path.join(DIR, "data");
+const LOG_FILE = path.join(DATA_DIR, "watchdog.log");
+const ENV_FILE = path.join(DIR, ".env");
+const CHECK_INTERVAL = 30_000;
+const OK_LOG_INTERVAL = 10 * 60_000;
+const MAX_LOG_BYTES = 5 * 1024 * 1024;
+
+let serverProc = null;
+let tunnelProc = null;
+let tunnelUrl = "";
+let isRestarting = false;
+let lastOkLog = 0;
+let config = {};
+let stats = { serverRestarts: 0, tunnelRestarts: 0, startTime: new Date() };
+
+// ==================== Logging ====================
+
+function log(msg) {
+  const ts = new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" });
+  const line = `[${ts}] ${msg}`;
+  console.log(line);
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    try {
+      if (fs.statSync(LOG_FILE).size > MAX_LOG_BYTES) {
+        const old = LOG_FILE + ".old";
+        try { fs.unlinkSync(old); } catch {}
+        fs.renameSync(LOG_FILE, old);
+      }
+    } catch {}
+    fs.appendFileSync(LOG_FILE, line + "\n");
+  } catch {}
+}
+
+// ==================== .env ====================
+
+function loadEnv() {
+  const lines = fs.readFileSync(ENV_FILE, "utf8").split(/\r?\n/);
+  config = {};
+  for (const l of lines) {
+    const t = l.trim();
+    if (!t || t.startsWith("#")) continue;
+    const i = t.indexOf("=");
+    if (i > 0) config[t.slice(0, i)] = t.slice(i + 1);
+  }
+}
+
+function updateBaseUrl(url) {
+  let content = fs.readFileSync(ENV_FILE, "utf8");
+  content = content.replace(/BASE_URL=.*/, `BASE_URL=${url}`);
+  fs.writeFileSync(ENV_FILE, content);
+  config.BASE_URL = url;
+}
+
+// ==================== LINE Alert ====================
+
+function sendAlert(text) {
+  return new Promise((resolve) => {
+    if (!config.CHANNEL_ACCESS_TOKEN || !config.ADMIN_USER_ID) {
+      log("LINE alert skipped (no credentials)");
+      return resolve();
+    }
+    const body = JSON.stringify({
+      to: config.ADMIN_USER_ID,
+      messages: [{ type: "text", text }],
+    });
+    const req = https.request(
+      {
+        hostname: "api.line.me",
+        path: "/v2/bot/message/push",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${config.CHANNEL_ACCESS_TOKEN}`,
+          "Content-Length": Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        res.resume();
+        resolve();
+      }
+    );
+    req.on("error", (e) => {
+      log(`LINE alert error: ${e.message}`);
+      resolve();
+    });
+    req.write(body);
+    req.end();
+  });
+}
+
+// ==================== Health Check ====================
+
+function checkHealth() {
+  return new Promise((resolve) => {
+    const port = config.PORT || 3000;
+    const req = http.get(`http://localhost:${port}/health`, { timeout: 5000 }, (res) => {
+      res.resume();
+      resolve(res.statusCode === 200);
+    });
+    req.on("error", () => resolve(false));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(false);
+    });
+  });
+}
+
+// ==================== Process Management ====================
+
+function killProc(proc) {
+  if (!proc) return;
+  try {
+    proc.kill();
+  } catch {}
+}
+
+function startServer() {
+  killProc(serverProc);
+  serverProc = spawn("node", ["app.js"], {
+    cwd: DIR,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, NODE_ENV: "production" },
+  });
+  serverProc.stdout.on("data", (d) => process.stdout.write(d));
+  serverProc.stderr.on("data", (d) => {
+    process.stderr.write(d);
+    const msg = d.toString().trim();
+    if (msg) log(`[server:err] ${msg.slice(0, 500)}`);
+  });
+  serverProc.on("exit", (code) => {
+    log(`Server exited (code ${code})`);
+    serverProc = null;
+  });
+}
+
+function startTunnel() {
+  killProc(tunnelProc);
+  const port = config.PORT || 3000;
+  const prevUrl = tunnelUrl;
+  const isNamed = Boolean(config.TUNNEL_NAME);
+
+  if (isNamed) {
+    tunnelUrl = `https://${config.TUNNEL_HOSTNAME}`;
+    log(`Named Tunnel: ${config.TUNNEL_NAME} → ${tunnelUrl}`);
+    tunnelProc = spawn("cloudflared", ["tunnel", "run", config.TUNNEL_NAME], {
+      cwd: DIR,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    tunnelProc.stderr.on("data", (d) => {
+      const msg = d.toString().trim();
+      if (/error|ERR/i.test(msg)) log(`[tunnel] ${msg.slice(0, 200)}`);
+    });
+  } else {
+    tunnelUrl = "";
+    log("Starting Quick Tunnel...");
+    tunnelProc = spawn("cloudflared", ["tunnel", "--url", `http://localhost:${port}`], {
+      cwd: DIR,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const onData = (d) => {
+      const text = d.toString();
+      const match = text.match(/(https:\/\/[a-z0-9-]+\.trycloudflare\.com)/);
+      if (match && !tunnelUrl) {
+        tunnelUrl = match[1];
+        log(`Quick Tunnel URL: ${tunnelUrl}`);
+        handleNewTunnelUrl(tunnelUrl);
+      }
+    };
+    tunnelProc.stdout.on("data", onData);
+    tunnelProc.stderr.on("data", onData);
+  }
+
+  tunnelProc.stdout.on("data", () => {});
+  tunnelProc.on("exit", (code) => {
+    log(`Tunnel exited (code ${code})`);
+    tunnelProc = null;
+  });
+
+  if (isNamed && tunnelUrl !== prevUrl) {
+    handleNewTunnelUrl(tunnelUrl);
+  }
+}
+
+async function handleNewTunnelUrl(url) {
+  isRestarting = true;
+  try {
+    updateBaseUrl(url);
+    log("Restarting server with new URL...");
+    startServer();
+    for (let i = 0; i < 5; i++) {
+      await sleep(2000);
+      if (await checkHealth()) break;
+    }
+    log("Updating LINE webhook...");
+    try {
+      execSync("node update-webhook.js", {
+        cwd: DIR,
+        timeout: 15000,
+        stdio: "pipe",
+      });
+      log("Webhook updated");
+    } catch (e) {
+      log(`Webhook update failed: ${e.message}`);
+    }
+  } finally {
+    isRestarting = false;
+  }
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+// ==================== Monitor Loop ====================
+
+async function monitor() {
+  if (isRestarting) return;
+
+  // Check tunnel process
+  if (!tunnelProc) {
+    isRestarting = true;
+    stats.tunnelRestarts++;
+    log(`Tunnel DOWN — restart #${stats.tunnelRestarts}`);
+    await sendAlert(
+      `⚠️ Tunnel ล่ม — กำลัง restart (ครั้งที่ ${stats.tunnelRestarts})`
+    );
+    startTunnel();
+    for (let i = 0; i < 15 && !tunnelUrl; i++) await sleep(2000);
+    if (tunnelUrl) {
+      await sendAlert(`✅ Tunnel กลับมาแล้ว\n🔗 ${tunnelUrl}`);
+    } else {
+      await sendAlert(
+        `❌ Tunnel restart แล้วยังไม่ได้ URL — ต้องเช็คเครื่องครับ`
+      );
+    }
+    isRestarting = false;
+    return;
+  }
+
+  // Check server health
+  const healthy = await checkHealth();
+  if (healthy) {
+    const now = Date.now();
+    if (now - lastOkLog > OK_LOG_INTERVAL) {
+      const upMin = Math.floor((now - stats.startTime.getTime()) / 60000);
+      log(
+        `OK — uptime ${upMin}m, server restarts: ${stats.serverRestarts}, tunnel restarts: ${stats.tunnelRestarts}`
+      );
+      lastOkLog = now;
+    }
+    return;
+  }
+
+  // Server down
+  isRestarting = true;
+  stats.serverRestarts++;
+  log(`Server DOWN — restart #${stats.serverRestarts}`);
+  await sendAlert(
+    `🔴 Server ล่ม! กำลัง restart (ครั้งที่ ${stats.serverRestarts})`
+  );
+
+  startServer();
+  await sleep(5000);
+
+  if (await checkHealth()) {
+    log("Server recovered");
+    await sendAlert(`✅ Server กลับมาทำงานแล้ว`);
+  } else {
+    log("Server STILL DOWN after restart");
+    await sendAlert(
+      `❌ Server restart แล้วยังไม่ขึ้น — ต้องเช็คเครื่องด้วยครับ`
+    );
+  }
+  isRestarting = false;
+}
+
+// ==================== Shutdown ====================
+
+function shutdown() {
+  log("Watchdog shutting down...");
+  sendAlert("🔴 ระบบ MGR ปิดตัวลง").finally(() => {
+    killProc(serverProc);
+    killProc(tunnelProc);
+    process.exit(0);
+  });
+  setTimeout(() => {
+    killProc(serverProc);
+    killProc(tunnelProc);
+    process.exit(0);
+  }, 3000);
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
+
+// ==================== Main ====================
+
+async function main() {
+  console.log("============================================");
+  console.log("  MGR Watchdog — System Monitor");
+  console.log("============================================\n");
+
+  loadEnv();
+  log("Watchdog starting...");
+
+  // Start server
+  startServer();
+  log("Server starting...");
+  await sleep(3000);
+
+  // Start tunnel
+  startTunnel();
+  log("Tunnel starting — waiting for URL...");
+  for (let i = 0; i < 15 && !tunnelUrl; i++) await sleep(2000);
+
+  if (!tunnelUrl) {
+    log("WARNING: No tunnel URL after 30 seconds");
+  }
+
+  const healthy = await checkHealth();
+  await sendAlert(
+    `🟢 ระบบ MGR เปิดทำงานแล้ว\n` +
+      `${healthy ? "✅" : "⚠️"} Server: ${healthy ? "OK" : "starting..."}\n` +
+      (tunnelUrl ? `🔗 ${tunnelUrl}` : "⚠️ Tunnel: waiting...")
+  );
+
+  log(`Monitoring started (every ${CHECK_INTERVAL / 1000}s)`);
+  lastOkLog = Date.now();
+  setInterval(monitor, CHECK_INTERVAL);
+}
+
+main().catch((e) => {
+  log(`FATAL: ${e.message}`);
+  process.exit(1);
+});

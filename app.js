@@ -206,12 +206,39 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
+// ==================== Rate Limiter ====================
+
+function createLimiter(windowMs, max) {
+  const hits = new Map();
+  setInterval(() => {
+    const now = Date.now();
+    for (const [k, v] of hits) if (now > v.reset) hits.delete(k);
+  }, windowMs).unref();
+  return (req, res, next) => {
+    const key = req.ip;
+    const now = Date.now();
+    let h = hits.get(key);
+    if (!h || now > h.reset) {
+      h = { count: 0, reset: now + windowMs };
+      hits.set(key, h);
+    }
+    if (++h.count > max) {
+      return res.status(429).json({ error: "คำขอมากเกินไป กรุณารอสักครู่" });
+    }
+    next();
+  };
+}
+
+const apiLimiter = createLimiter(60_000, 60);
+const slipLimiter = createLimiter(60_000, 10);
+
 // ==================== Express ====================
 
 const app = express();
 
 app.use("/images", express.static(path.join(__dirname, "images")));
 app.use(express.static(path.join(__dirname, "public")));
+app.use("/api/", apiLimiter);
 
 app.get("/", (_req, res) => res.send("MGR LINE Chatbot is running!"));
 app.get("/health", (_req, res) => res.json({ status: "ok", uptime: process.uptime() }));
@@ -446,7 +473,7 @@ app.post("/api/order", express.json(), async (req, res) => {
 
 // ==================== API: แนบสลิปจากหน้าเว็บ ====================
 
-app.post("/api/slip", express.json({ limit: "15mb" }), async (req, res) => {
+app.post("/api/slip", slipLimiter, express.json({ limit: "15mb" }), async (req, res) => {
   let lockedOrder = null;
   try {
     const { orderId, slipToken, image } = req.body;

@@ -17,12 +17,16 @@ images/qr-payment.jpg      # PromptPay QR code for payment
 images/slips/              # Customer payment slips (gitignored)
 db.js                      # SQLite persistence layer (orders + sessions)
 slipok.js                  # SlipOK slip verification (optional, auto-confirm)
+watchdog.js                # Production watchdog — manages server+tunnel, auto-restart, LINE alerts, logging
 data/mgr.{env}.db          # SQLite database (gitignored — runtime state)
 data/counter.{env}.json    # Order counter persistence (survives restart)
+data/watchdog.log          # Watchdog event log (auto-rotated at 5MB)
 setup-rich-menu.js         # Creates 3-button Rich Menu (Food/Drinks/Contact)
 update-webhook.js          # Sets LINE webhook URL
-start-all.bat              # Production: server + tunnel + webhook
-start-dev.bat              # Dev: same flow but uses .env.development
+start-all.bat              # Production: runs watchdog.js (auto-restart loop)
+start-dev.bat              # Dev: server + tunnel + webhook (no watchdog)
+setup-autostart.bat        # Creates Windows Task Scheduler task for auto-start on boot
+setup-named-tunnel.bat     # Interactive: creates Cloudflare Named Tunnel for fixed URL
 ```
 
 ## Environment Setup (done 2026-06-21)
@@ -100,15 +104,36 @@ GET  /api/order-status — resume order page (oid, slipToken)
 ```
 Token comes from URL param `?t={token}` (30-min TTL, created by bot when user taps Food).
 
+## Production Watchdog (`watchdog.js`)
+Node.js process that manages the entire production stack:
+- **Starts & manages** server (`node app.js`) + Cloudflare Tunnel as child processes
+- **Tunnel modes**: Quick Tunnel (random URL, auto-extract) or Named Tunnel (fixed URL via `TUNNEL_NAME`/`TUNNEL_HOSTNAME` in .env)
+- **Auto-extracts** tunnel URL → updates `.env` BASE_URL → restarts server → updates LINE webhook
+- **Health monitoring** every 30 seconds via `/health` endpoint
+- **Auto-restart** crashed server or tunnel immediately
+- **LINE alerts** to admin: system up 🟢, server down 🔴, tunnel down ⚠️, recovered ✅, shutdown 🔴
+- **Log rotation**: writes to `data/watchdog.log`, rotates at 5MB
+- **Graceful shutdown**: Ctrl+C sends shutdown alert → kills children → exits
+- `start-all.bat` wraps watchdog.js in a restart loop (if watchdog itself crashes, it restarts)
+- `setup-autostart.bat` creates Windows Task Scheduler task → system starts on boot (run as admin)
+
+## Security
+- **Rate limiting**: API endpoints limited to 60 req/min/IP; slip upload limited to 10 req/min/IP
+- LINE webhook signature verification (built-in via @line/bot-sdk middleware)
+- Server-side price validation (never trusts client total)
+- Secrets in `.env` (gitignored)
+- Cloudflare Tunnel (no exposed ports)
+
 ## Remaining work / known issues
-- **Production deployment**: Railway config exists (`railway.json`, `Procfile`) but not yet deployed — still running production from local machine via Cloudflare Tunnel. ⚠️ If moving to Railway, SQLite needs a persistent volume or the `.db` is wiped on each redeploy
-- **Cancel/reject flow**: cancel tested OK; admin reject + cancel-after-confirm not yet tested end-to-end on real LINE
-- **SlipOK**: integrated + unit/integration tested with mocks; needs real API key + a real slip to test end-to-end
+- **Named Tunnel**: `setup-named-tunnel.bat` prepared — requires a domain on Cloudflare (~350 baht/year). Gives fixed URL, no session breaks on tunnel restart
 - **PROJECT-DNA.md**: full project context file exists for use in Claude Chat conversations
 
 ## Commands
 ```bash
 npm run dev          # Dev server with nodemon (no tunnel)
 npm run dev:tunnel   # start-dev.bat (server + tunnel + webhook)
-npm start            # Production server
+npm start            # Production server (direct, no watchdog)
+start-all.bat        # Production with watchdog (auto-restart + LINE alerts + tunnel)
+setup-autostart.bat  # Set up auto-start on Windows boot (run as administrator)
+setup-named-tunnel.bat  # Set up Cloudflare Named Tunnel for fixed URL (requires domain)
 ```
