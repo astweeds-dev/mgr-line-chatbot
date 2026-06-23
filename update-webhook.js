@@ -1,46 +1,49 @@
-const { messagingApi } = require("@line/bot-sdk");
+const fs = require("fs");
+const path = require("path");
+
 const NODE_ENV = (process.env.NODE_ENV || "production").trim();
 const envFile = NODE_ENV === "development" ? ".env.development" : ".env";
-require("dotenv").config({ path: envFile });
+const envPath = path.join(__dirname, envFile);
 
-const client = new messagingApi.MessagingApiClient({
-  channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
-});
-
-const webhookUrl = process.env.BASE_URL + "/webhook";
+function readEnv() {
+  const cfg = {};
+  for (const l of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    const t = l.trim();
+    if (!t || t.startsWith("#")) continue;
+    const i = t.indexOf("=");
+    if (i > 0) cfg[t.slice(0, i).trim()] = t.slice(i + 1).trim();
+  }
+  return cfg;
+}
 
 async function main() {
+  const cfg = readEnv();
+  const baseUrl = process.argv[2] || cfg.BASE_URL;
+  const token = cfg.CHANNEL_ACCESS_TOKEN;
+  const webhookUrl = baseUrl + "/webhook";
+
   try {
-    await client.setWebhookEndpoint({ endpoint: webhookUrl });
-    console.log("Webhook URL set:", webhookUrl);
-
-    const result = await client.testWebhookEndpoint({ endpoint: webhookUrl });
-    if (result.success) {
-      console.log("Webhook verify: OK");
+    const res = await fetch("https://api.line.me/v2/bot/channel/webhook/endpoint", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ endpoint: webhookUrl }),
+    });
+    if (res.ok) {
+      console.log("Webhook URL set:", webhookUrl);
     } else {
-      console.log("Webhook verify: FAILED -", result.reason);
+      const t = await res.text();
+      console.log("Webhook update failed:", res.status, t);
     }
 
-    // อัปเดต LIFF Endpoint URL ให้ตรงกับ tunnel URL ปัจจุบัน
-    const liffId = process.env.LIFF_ID;
-    if (liffId) {
-      const liffUrl = process.env.BASE_URL + "/order.html";
-      const res = await fetch(`https://api.line.me/liff/v1/apps/${liffId}`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ view: { type: "full", url: liffUrl } }),
-      });
-      if (res.ok) {
-        console.log("LIFF endpoint updated:", liffUrl);
-      } else {
-        console.log("LIFF update failed:", await res.text());
-      }
-    }
+    const verify = await fetch("https://api.line.me/v2/bot/channel/webhook/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ endpoint: webhookUrl }),
+    });
+    const vr = await verify.json();
+    console.log("Webhook verify:", vr.success ? "OK" : "FAILED - " + (vr.reason || ""));
   } catch (err) {
-    console.error("Error:", err.body || err.message);
+    console.error("Error:", err.message);
   }
 }
 

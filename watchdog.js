@@ -62,7 +62,7 @@ function loadEnv() {
     const t = l.trim();
     if (!t || t.startsWith("#")) continue;
     const i = t.indexOf("=");
-    if (i > 0) config[t.slice(0, i)] = t.slice(i + 1);
+    if (i > 0) config[t.slice(0, i).trim()] = t.slice(i + 1).trim();
   }
 }
 
@@ -212,17 +212,27 @@ function startTunnel() {
 async function handleNewTunnelUrl(url) {
   isRestarting = true;
   try {
-    updateBaseUrl(url);
-    log("Updating LINE webhook...");
-    try {
-      execSync("node update-webhook.js", {
-        cwd: DIR,
-        timeout: 15000,
-        stdio: "pipe",
-      });
-      log("Webhook updated");
-    } catch (e) {
-      log(`Webhook update failed: ${e.message}`);
+    const cleanUrl = url.replace(/[\r\n\s]+/g, "");
+    updateBaseUrl(cleanUrl);
+    const webhookUrl = cleanUrl + "/webhook";
+    log(`Waiting for tunnel to stabilize...`);
+    await sleep(5000);
+    log(`Updating LINE webhook → ${webhookUrl}`);
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const r = await fetch("https://api.line.me/v2/bot/channel/webhook/endpoint", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + config.CHANNEL_ACCESS_TOKEN },
+          body: JSON.stringify({ endpoint: webhookUrl }),
+        });
+        if (r.ok) { log("Webhook set OK"); break; }
+        const t = await r.text();
+        log(`Webhook attempt ${attempt}/3 HTTP ${r.status}: ${t}`);
+        if (attempt < 3) await sleep(3000);
+      } catch (e) {
+        log(`Webhook attempt ${attempt}/3 error: ${e.message}`);
+        if (attempt < 3) await sleep(3000);
+      }
     }
   } finally {
     isRestarting = false;
