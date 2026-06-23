@@ -45,6 +45,7 @@ button{font-family:'Sarabun',sans-serif;cursor:pointer;border:none;outline:none}
 .cat-tabs::-webkit-scrollbar{display:none}
 .cat-tab{flex:0 0 auto;padding:8px 18px;border-radius:20px;font-size:14px;font-weight:700;background:#fff;color:#999;border:1.5px solid #e8e4cc;white-space:nowrap;transition:all .15s}
 .cat-tab.active{background:#F9E84A;color:#5A4F00;border-color:#F9E84A}
+.cat-tab.closed{opacity:.45;text-decoration:line-through}
 .menu-empty{text-align:center;color:#aaa;font-size:14px;padding:48px 16px}
 
 /* ===== MENU LIST ===== */
@@ -335,6 +336,18 @@ let lang = (function () { try { return localStorage.getItem("lang") || "th"; } c
 function L(x) { return x && typeof x === "object" ? (x[lang] || x.th || x.en) : x; }     // ค่าเป็น string หรือ {th,en}
 function disp(map, v) { return (map[v] && map[v][lang]) || v; }                            // ค่าไทย → แสดงตามภาษา
 
+// เวลาเปิด-ปิด (ต้องตรงกับ BUSINESS_HOURS ใน app.js)
+const BIZ_HOURS = {
+  food:   { open: 16, close: 24, label: { th: "16:00 - 23:59", en: "4:00 PM - 11:59 PM" } },
+  drinks: { open: 10, close: 24, label: { th: "10:00 - 23:59", en: "10:00 AM - 11:59 PM" } },
+};
+function catSection(catId) { return catId === "food" ? "food" : "drinks"; }
+function isSectionOpen(sec) {
+  const h = BIZ_HOURS[sec];
+  const hr = new Date().getHours();
+  return h && hr >= h.open && hr < h.close;
+}
+
 // หมวดเมนู — ลำดับนี้คือลำดับที่แสดงบนแท็บ
 const CATS = [
   { id: "food",   label: { th: "อาหารตามสั่ง", en: "Fast Food" },   prefix: { th: "ข้าวราด", en: "Rice with " } },
@@ -483,7 +496,7 @@ let delivery = { location: null, name: "", phone: "" };
 let cart = [];
 let cartUid = 0;
 let extras = new Set();
-let curCat = CATS[0].id;
+let curCat = (CATS.find(c => isSectionOpen(catSection(c.id))) || CATS[0]).id;
 let curItem = null;
 let curMeat = null;
 let curAddons = new Set();
@@ -647,15 +660,34 @@ function selectCat(id) {
 }
 
 function renderCatTabs() {
-  document.getElementById("cat-tabs").innerHTML = CATS.map(c =>
-    `<button class="cat-tab ${c.id === curCat ? 'active' : ''}" onclick="selectCat('${c.id}')">${L(c.label)}</button>`
-  ).join("");
+  document.getElementById("cat-tabs").innerHTML = CATS.map(c => {
+    const open = isSectionOpen(catSection(c.id));
+    const cls = `cat-tab ${c.id === curCat ? 'active' : ''} ${!open ? 'closed' : ''}`;
+    return `<button class="${cls}" onclick="selectCat('${c.id}')">${L(c.label)}${!open ? ' 🔒' : ''}</button>`;
+  }).join("");
 }
 
 function renderMenu() {
   renderCatTabs();
-  const items = MENU.filter(item => item.cat === curCat);
+  const sec = catSection(curCat);
+  const open = isSectionOpen(sec);
   const listEl = document.getElementById("menu-list");
+
+  if (!open) {
+    const h = BIZ_HOURS[sec];
+    const secName = sec === "food"
+      ? (lang === "th" ? "ครัว" : "Kitchen")
+      : (lang === "th" ? "ร้านเครื่องดื่ม" : "Drinks");
+    listEl.innerHTML = `<div class="menu-empty" style="text-align:center;padding:40px 20px;">
+      <div style="font-size:48px;margin-bottom:12px;">🔒</div>
+      <div style="font-size:16px;font-weight:bold;margin-bottom:8px;">${secName} ${lang === "th" ? "ปิดอยู่" : "is closed"}</div>
+      <div style="color:#888;">${lang === "th" ? "เปิดให้บริการ" : "Open"} ${L(h.label)}</div>
+    </div>`;
+    renderCartBar();
+    return;
+  }
+
+  const items = MENU.filter(item => item.cat === curCat);
   if (!items.length) {
     listEl.innerHTML = `<div class="menu-empty">${t("comingSoon")}</div>`;
   } else {

@@ -26,6 +26,22 @@ const DELIVERY_LOCATIONS = [
   "ลานนั่งหน้ามินิบาร์",
 ];
 
+// เวลาเปิด-ปิดแต่ละหมวด (ชั่วโมง, 24h)
+const BUSINESS_HOURS = {
+  food:   { open: 16, close: 24, label: "16:00 - 23:59" },
+  drinks: { open: 10, close: 24, label: "10:00 - 23:59" },
+};
+
+function isSectionOpen(section) {
+  const hour = new Date().getHours();
+  const h = BUSINESS_HOURS[section];
+  return h && hour >= h.open && hour < h.close;
+}
+
+function itemSection(itemId) {
+  return Number(itemId) <= 19 ? "food" : "drinks";
+}
+
 // บรรทัดข้อมูลจัดส่ง/ลูกค้า สำหรับแสดงให้แอดมิน
 function deliveryText(order) {
   const d = order && order.delivery;
@@ -294,6 +310,16 @@ app.post("/api/order", express.json(), async (req, res) => {
 
     if (!items || items.length === 0) {
       return res.status(400).json({ error: "กรุณาเลือกอย่างน้อย 1 เมนู" });
+    }
+
+    // ตรวจเวลาเปิด-ปิดแต่ละหมวด
+    for (const it of items) {
+      const sec = itemSection(parseCartKey(it.key).id);
+      if (!isSectionOpen(sec)) {
+        const h = BUSINESS_HOURS[sec];
+        const label = sec === "food" ? "ครัว" : "ร้านเครื่องดื่ม";
+        return res.status(400).json({ error: `${label}ปิดแล้วครับ เปิด ${h.label} น.` });
+      }
     }
 
     // คิดยอดรวมเองฝั่ง server — ไม่เชื่อค่าจากเว็บ
@@ -647,13 +673,36 @@ async function handleText(replyToken, userId, text) {
     ]);
   }
 
-  if (
-    text === "อาหาร" || text === "เมนูอาหาร" || text === "สั่งอาหาร" ||
-    text === "Food / Drinks" || text === "อาหาร/เครื่องดื่ม" || text === "เครื่องดื่มและกาแฟ" ||
-    text === "เมนูกาแฟ" || text === "กาแฟ" || text === "เครื่องดื่ม"
-  ) {
+  const isFood  = text === "อาหาร" || text === "เมนูอาหาร" || text === "สั่งอาหาร";
+  const isDrink = text === "เครื่องดื่มและกาแฟ" || text === "เมนูกาแฟ" || text === "กาแฟ" || text === "เครื่องดื่ม";
+  const isBoth  = text === "Food / Drinks" || text === "อาหาร/เครื่องดื่ม";
+
+  if (isFood || isDrink || isBoth) {
+    const foodOpen  = isSectionOpen("food");
+    const drinkOpen = isSectionOpen("drinks");
+
+    // บล็อกถ้าหมวดที่กดปิดอยู่
+    if (isFood && !foodOpen) {
+      let msg = `🕐 ครัวเปิดให้บริการ ${BUSINESS_HOURS.food.label} น. ครับ`;
+      if (drinkOpen) msg += `\n\n☕ สั่งเครื่องดื่มได้เลย กดปุ่ม "Drinks & Coffee" ด้านล่าง`;
+      return reply(replyToken, [{ type: "text", text: msg }]);
+    }
+    if (isDrink && !drinkOpen) {
+      let msg = `🕐 ร้านเครื่องดื่มเปิดให้บริการ ${BUSINESS_HOURS.drinks.label} น. ครับ`;
+      if (foodOpen) msg += `\n\n🍱 สั่งอาหารได้เลย กดปุ่ม "Food" ด้านล่าง`;
+      return reply(replyToken, [{ type: "text", text: msg }]);
+    }
+    if (isBoth && !foodOpen && !drinkOpen) {
+      return reply(replyToken, [{ type: "text", text: `🕐 ร้านปิดแล้วครับ\n\n🍱 ครัว: ${BUSINESS_HOURS.food.label} น.\n☕ เครื่องดื่ม: ${BUSINESS_HOURS.drinks.label} น.` }]);
+    }
+
     const token = createToken(userId);
     const orderUrl = `${BASE_URL}/order.html?t=${token}`;
+
+    const subtitle = foodOpen && drinkOpen
+      ? "อาหารตามสั่ง · กาแฟ · นม · โซดา"
+      : foodOpen ? "อาหารตามสั่ง (เครื่องดื่มยังไม่เปิด)"
+      : "กาแฟ · นม · โซดา (ครัวยังไม่เปิด)";
 
     return reply(replyToken, [
       {
@@ -675,7 +724,7 @@ async function handleText(replyToken, userId, text) {
               },
               {
                 type: "text",
-                text: "อาหารตามสั่ง · กาแฟ · นม · โซดา\nเลือกเมนู กดจำนวน ยืนยัน จบในหน้าเดียว!",
+                text: subtitle + "\nเลือกเมนู กดจำนวน ยืนยัน จบในหน้าเดียว!",
                 size: "sm",
                 color: "#888888",
                 align: "center",
@@ -823,7 +872,15 @@ async function notifyAdminSlip(orderId, order) {
     return false;
   }
   try {
-    await client.pushMessage({ to: ADMIN_ID, messages: [adminSlipFlex(orderId, order)] });
+    const messages = [adminSlipFlex(orderId, order)];
+    if (order.slipUrl) {
+      messages.unshift({
+        type: "image",
+        originalContentUrl: order.slipUrl,
+        previewImageUrl: order.slipUrl,
+      });
+    }
+    await client.pushMessage({ to: ADMIN_ID, messages });
     return true;
   } catch (err) {
     console.error("Admin slip notify error:", err.message);
