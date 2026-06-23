@@ -19,6 +19,8 @@ button{font-family:'Sarabun',sans-serif;cursor:pointer;border:none;outline:none}
 .hero-logo{width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid #F9E84A;box-shadow:0 2px 12px rgba(249,232,74,.35)}
 .hero-name{font-size:18px;font-weight:800;color:#5A4F00;margin-top:8px;letter-spacing:-.3px}
 .hero-badge{display:inline-block;background:#F9E84A;color:#5A4F00;font-size:12px;font-weight:700;padding:3px 12px;border-radius:20px;margin-top:6px}
+.hero{position:relative}
+.btn-close-page{position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:50%;background:rgba(0,0,0,.08);color:#5A4F00;font-size:20px;display:flex;align-items:center;justify-content:center;line-height:1;z-index:10}
 .hero-sub{font-size:12px;color:#8a7f33;font-weight:600;margin-top:6px;letter-spacing:.3px}
 
 /* ===== START FORM (จุดจัดส่ง + ข้อมูลลูกค้า) ===== */
@@ -201,6 +203,7 @@ button{font-family:'Sarabun',sans-serif;cursor:pointer;border:none;outline:none}
 <!-- ==================== VIEW: START (จุดจัดส่ง + ข้อมูลลูกค้า) ==================== -->
 <div id="v-start" class="view active">
   <div class="hero">
+    <button class="btn-close-page" onclick="closePage()" title="ปิด">×</button>
     <img src="/images/mgr%20logo.jpg" alt="MGR" class="hero-logo">
     <div class="hero-name">Merry Go Round Studio</div>
     <span class="hero-badge" data-i18n="tagline">สั่งอาหารและเครื่องดื่ม</span>
@@ -227,6 +230,7 @@ button{font-family:'Sarabun',sans-serif;cursor:pointer;border:none;outline:none}
 <!-- ==================== VIEW: MENU ==================== -->
 <div id="v-menu" class="view">
   <div class="hero">
+    <button class="btn-close-page" onclick="closePage()" title="ปิด">×</button>
     <img src="/images/mgr%20logo.jpg" alt="MGR" class="hero-logo">
     <div class="hero-name">Merry Go Round Studio</div>
     <span class="hero-badge" data-i18n="tagline">สั่งอาหารและเครื่องดื่ม</span>
@@ -317,6 +321,7 @@ button{font-family:'Sarabun',sans-serif;cursor:pointer;border:none;outline:none}
   <div class="success-summary" id="s-summary"></div>
   <div class="success-eta" data-i18n="waitConfirm">รอร้านค้ายืนยันการชำระเงิน</div>
   <div class="success-note" data-i18n="checkLine">ดูสถานะต่อได้ในแชท LINE ครับ 🙏</div>
+  <button class="btn-confirm" style="margin-top:20px;max-width:280px;" onclick="closePage()">กลับไปที่แชท LINE</button>
 </div>
 
 <!-- ==================== OVERLAY ==================== -->
@@ -1076,6 +1081,11 @@ async function uploadSlip(dataUrl) {
 }
 
 // ==================== SUCCESS ====================
+function closePage() {
+  try { window.close(); } catch {}
+  setTimeout(() => { location.href = "https://line.me/R/"; }, 300);
+}
+
 function goSuccess() {
   showView("v-success");
   document.getElementById("s-oid").textContent = `#${lastOrderId}`;

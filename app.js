@@ -926,14 +926,21 @@ function notifyAdminAutoConfirmed(orderId, order) {
   if (!ADMIN_ID) return Promise.resolve();
   const dInfo = deliveryText(order);
   const dPart = dInfo ? `${dInfo}\n` : "";
+  const messages = [];
+  if (order.slipUrl) {
+    messages.push({
+      type: "image",
+      originalContentUrl: order.slipUrl,
+      previewImageUrl: order.slipUrl,
+    });
+  }
+  messages.push({
+    type: "text",
+    text: `✅ ออเดอร์ใหม่ #${orderId} (สลิปผ่านการตรวจอัตโนมัติ)\n${dPart}${order.summary}\n💰 รวม: ${order.total}.-\n\nเริ่มทำได้เลยครับ 🍱`,
+  });
   return client.pushMessage({
     to: ADMIN_ID,
-    messages: [
-      {
-        type: "text",
-        text: `✅ ออเดอร์ใหม่ #${orderId} (สลิปผ่านการตรวจอัตโนมัติ)\n${dPart}${order.summary}\n💰 รวม: ${order.total}.-\n\nเริ่มทำได้เลยครับ 🍱`,
-      },
-    ],
+    messages,
   }).catch((err) => console.error("Notify admin (auto-confirm) error:", err.message));
 }
 
