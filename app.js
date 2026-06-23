@@ -4,6 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const sharp = require("sharp");
 const store = require("./db");
+const slipok = require("./slipok");
 const { middleware, messagingApi } = require("@line/bot-sdk");
 const NODE_ENV = (process.env.NODE_ENV || "production").trim();
 const envFile = NODE_ENV === "development" ? ".env.development" : ".env";
@@ -469,21 +470,45 @@ app.post("/api/slip", express.json({ limit: "15mb" }), async (req, res) => {
       return res.status(413).json({ error: "ไฟล์ใหญ่เกินไป" });
     }
 
-    // จองสถานะก่อน (sync) กันส่งสลิปซ้ำซ้อนตอนคนเยอะ — คืนสถานะถ้าเขียนไฟล์ล้มเหลว
+    // จองสถานะก่อน (sync) กันส่งสลิปซ้ำซ้อนตอนคนเยอะ — คืนสถานะถ้าตรวจไม่ผ่าน/ล้มเหลว
     order.state = "slip_sent";
     lockedOrder = order;
     store.saveOrder(orderId, order);
 
-    const slipFile = await saveSlipImage(buffer, orderId, order.slipToken);
+    // ตรวจสลิปกับ SlipOK (ถ้าเปิดใช้) ก่อนรับเข้าระบบ
+    const verify = await slipok.verifySlip(buffer, order.total);
+    if (verify.status === "duplicate" || verify.status === "wrong_amount" || verify.status === "invalid") {
+      order.state = "await_slip"; // คืนสถานะให้ลองส่งใหม่
+      store.saveOrder(orderId, order);
+      lockedOrder = null;
+      const msg =
+        verify.status === "duplicate" ? "สลิปนี้ถูกใช้ไปแล้ว กรุณาโอนใหม่แล้วแนบสลิปที่ถูกต้องครับ" :
+        verify.status === "wrong_amount" ? `ยอดโอนไม่ตรงครับ (สลิป ${verify.slipAmount}.- ต้องโอน ${order.total}.-)` :
+        "อ่านสลิปไม่ได้ กรุณาแนบรูปสลิปที่ชัดเจนครับ";
+      return res.status(400).json({ error: msg });
+    }
 
+    const slipFile = await saveSlipImage(buffer, orderId, order.slipToken);
     order.slipUrl = `${BASE_URL}/images/slips/${slipFile}`;
     store.saveOrder(orderId, order);
+
+    // ✅ SlipOK ตรวจผ่าน + ยอดตรง → ยืนยันอัตโนมัติ (ไม่ต้องรอแอดมิน)
+    if (verify.status === "verified") {
+      setConfirmed(orderId, order);
+      lockedOrder = null;
+      res.json({ success: true, autoConfirmed: true });
+      if (order.userId.startsWith("TEST")) return;
+      notifyCustomerConfirmed(orderId, order);
+      notifyAdminAutoConfirmed(orderId, order);
+      return;
+    }
+
+    // SlipOK ล่ม (error) หรือยังไม่ได้ตั้งค่า (disabled) → ส่งให้แอดมินยืนยันเอง
     const cs = getSession(order.userId);
     cs.state = "await_confirm";
     store.saveSession(order.userId, cs);
-
     res.json({ success: true });
-    lockedOrder = null; // สำเร็จแล้ว ไม่ต้องคืนสถานะ
+    lockedOrder = null;
 
     // dev: test order (uid ขึ้นต้น "TEST") — ข้ามการ push LINE ทั้งหมด กันสแปมแอดมินจริง
     if (order.userId.startsWith("TEST")) return;
@@ -783,6 +808,49 @@ async function notifyAdminSlip(orderId, order) {
   }
 }
 
+// ==================== ยืนยันออเดอร์ (ใช้ร่วม: แอดมินกดเอง + auto-confirm จาก SlipOK) ====================
+
+// เปลี่ยนสถานะเป็น confirmed + เคลียร์ session + persist (ไม่ push — ให้ caller จัดการ)
+function setConfirmed(orderId, order) {
+  const cs = getSession(order.userId);
+  cs.state = "idle";
+  cs.orderId = null;
+  order.state = "confirmed";
+  store.saveOrder(orderId, order);
+  store.saveSession(order.userId, cs);
+}
+
+// แจ้งลูกค้าว่าชำระเงินเรียบร้อย
+function notifyCustomerConfirmed(orderId, order) {
+  const dInfo = deliveryText(order);
+  const dPart = dInfo ? `\n${dInfo}` : "";
+  return client.pushMessage({
+    to: order.userId,
+    messages: [
+      {
+        type: "text",
+        text: `✅ ชำระเงินเรียบร้อยแล้ว!\n\n📋 ออเดอร์ #${orderId}${dPart}\n${order.summary}\n💰 รวม: ${order.total}.-\n\nกำลังเตรียมอาหารให้นะครับ 🍱`,
+      },
+    ],
+  }).catch((err) => console.error("Notify customer (confirm) error:", err.message));
+}
+
+// แจ้งแอดมินว่าออเดอร์ผ่านการตรวจสลิปอัตโนมัติแล้ว (ไม่ต้องกดยืนยัน) — ไว้เริ่มทำอาหาร
+function notifyAdminAutoConfirmed(orderId, order) {
+  if (!ADMIN_ID) return Promise.resolve();
+  const dInfo = deliveryText(order);
+  const dPart = dInfo ? `${dInfo}\n` : "";
+  return client.pushMessage({
+    to: ADMIN_ID,
+    messages: [
+      {
+        type: "text",
+        text: `✅ ออเดอร์ใหม่ #${orderId} (สลิปผ่านการตรวจอัตโนมัติ)\n${dPart}${order.summary}\n💰 รวม: ${order.total}.-\n\nเริ่มทำได้เลยครับ 🍱`,
+      },
+    ],
+  }).catch((err) => console.error("Notify admin (auto-confirm) error:", err.message));
+}
+
 // ==================== Image Handler (รับสลิป) ====================
 
 async function handleImage(replyToken, userId, messageId) {
@@ -810,11 +878,39 @@ async function handleImage(replyToken, userId, messageId) {
     for await (const chunk of stream) chunks.push(chunk);
     const buffer = Buffer.concat(chunks);
 
+    // ตรวจสลิปกับ SlipOK (ถ้าเปิดใช้)
+    const verify = await slipok.verifySlip(buffer, order.total);
+    if (verify.status === "duplicate" || verify.status === "wrong_amount" || verify.status === "invalid") {
+      order.state = "await_slip"; // คืนสถานะให้ส่งสลิปใหม่ได้
+      session.state = "await_slip";
+      store.saveOrder(orderId, order);
+      store.saveSession(userId, session);
+      const msg =
+        verify.status === "duplicate" ? "❌ สลิปนี้ถูกใช้ไปแล้ว กรุณาโอนใหม่แล้วส่งสลิปที่ถูกต้องครับ" :
+        verify.status === "wrong_amount" ? `❌ ยอดโอนไม่ตรงครับ (สลิป ${verify.slipAmount}.- ต้องโอน ${order.total}.-)\nกรุณาโอนให้ครบแล้วส่งสลิปใหม่ครับ` :
+        "❌ อ่านสลิปไม่ได้ กรุณาส่งรูปสลิปที่ชัดเจนครับ";
+      return reply(replyToken, [{ type: "text", text: msg }]);
+    }
+
     // ย่อ+บีบอัด+เขียนแบบ async (ไม่บล็อก event loop)
     const slipFile = await saveSlipImage(buffer, orderId, order.slipToken);
     order.slipUrl = `${BASE_URL}/images/slips/${slipFile}`;
     store.saveOrder(orderId, order);
 
+    // ✅ SlipOK ตรวจผ่าน + ยอดตรง → ยืนยันอัตโนมัติ
+    if (verify.status === "verified") {
+      setConfirmed(orderId, order);
+      await reply(replyToken, [
+        {
+          type: "text",
+          text: `✅ ชำระเงินเรียบร้อยแล้ว!\n\n📋 ออเดอร์ #${orderId}\n${order.summary}\n💰 รวม: ${order.total}.-\n\nกำลังเตรียมอาหารให้นะครับ 🍱`,
+        },
+      ]);
+      notifyAdminAutoConfirmed(orderId, order);
+      return;
+    }
+
+    // SlipOK ล่ม/ปิดใช้ → แอดมินยืนยันเอง
     await reply(replyToken, [
       {
         type: "text",
@@ -894,26 +990,12 @@ async function handlePostback(replyToken, userId, data) {
     if (order.state !== "slip_sent")
       return reply(replyToken, [{ type: "text", text: `⏳ ออเดอร์ #${orderId} ยังไม่มีสลิป — รอลูกค้าส่งก่อนครับ` }]);
 
-    const cs = getSession(order.userId);
-    cs.state = "idle";
-    cs.orderId = null;
-    order.state = "confirmed";
-    store.saveOrder(orderId, order);
-    store.saveSession(order.userId, cs);
+    setConfirmed(orderId, order);
+    notifyCustomerConfirmed(orderId, order);
 
     const now = new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" });
     const dInfo = deliveryText(order);
     const dPart = dInfo ? `\n${dInfo}` : "";
-
-    client.pushMessage({
-      to: order.userId,
-      messages: [
-        {
-          type: "text",
-          text: `✅ ชำระเงินเรียบร้อยแล้ว!\n\n📋 ออเดอร์ #${orderId}${dPart}\n${order.summary}\n💰 รวม: ${order.total}.-\n\nกำลังเตรียมอาหารให้นะครับ 🍱`,
-        },
-      ],
-    }).catch(err => console.error("Notify customer (confirm) error:", err.message));
 
     return reply(replyToken, [
       {

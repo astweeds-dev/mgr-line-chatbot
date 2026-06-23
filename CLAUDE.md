@@ -16,6 +16,7 @@ images/mgr logo.jpg        # Store logo (note: filename has a space)
 images/qr-payment.jpg      # PromptPay QR code for payment
 images/slips/              # Customer payment slips (gitignored)
 db.js                      # SQLite persistence layer (orders + sessions)
+slipok.js                  # SlipOK slip verification (optional, auto-confirm)
 data/mgr.{env}.db          # SQLite database (gitignored — runtime state)
 data/counter.{env}.json    # Order counter persistence (survives restart)
 setup-rich-menu.js         # Creates 3-button Rich Menu (Food/Drinks/Contact)
@@ -48,6 +49,20 @@ node -e "require('dotenv').config({path:'.env.development'}); require('./setup-r
 **Important**: In LINE Official Account Manager, for each channel:
 - "Use webhook" must be **enabled**
 - "Auto-reply messages" must be **disabled**
+
+### SlipOK slip verification (optional)
+`slipok.js` verifies payment slips against the bank via [SlipOK](https://slipok.com) (free tier: 100 slips/mo).
+Set in `.env` / `.env.development`:
+```
+SLIPOK_BRANCH_ID=<branch id>
+SLIPOK_API_KEY=<api key>
+```
+- **If unset** → falls back to manual admin confirm (current behavior, no change).
+- **If set** → on slip upload (web `/api/slip` and LINE chat), slip is checked: real transfer + amount matches order total + not a duplicate (code 1012) + paid to shop's account (`log:true`).
+  - ✅ pass → order **auto-confirmed**, customer + admin notified (admin doesn't need to tap).
+  - ❌ duplicate / wrong amount / unreadable → rejected, customer told to re-send (state stays `await_slip`).
+  - ⚠️ SlipOK API down → falls back to manual admin confirm.
+- Verification logic is shared via `setConfirmed()` / `notifyCustomerConfirmed()` (also used by admin confirm).
 
 ## order.html (complete, 2026-06-22)
 GrabFood/LINE MAN style ordering UI — bilingual (Thai/English).
@@ -87,7 +102,8 @@ Token comes from URL param `?t={token}` (30-min TTL, created by bot when user ta
 
 ## Remaining work / known issues
 - **Production deployment**: Railway config exists (`railway.json`, `Procfile`) but not yet deployed — still running production from local machine via Cloudflare Tunnel. ⚠️ If moving to Railway, SQLite needs a persistent volume or the `.db` is wiped on each redeploy
-- **Cancel/reject flow**: not yet tested end-to-end (admin reject, cancel-after-confirm, re-upload slip)
+- **Cancel/reject flow**: cancel tested OK; admin reject + cancel-after-confirm not yet tested end-to-end on real LINE
+- **SlipOK**: integrated + unit/integration tested with mocks; needs real API key + a real slip to test end-to-end
 - **PROJECT-DNA.md**: full project context file exists for use in Claude Chat conversations
 
 ## Commands
