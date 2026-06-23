@@ -477,15 +477,11 @@ app.post("/api/slip", express.json({ limit: "15mb" }), async (req, res) => {
 
     // ตรวจสลิปกับ SlipOK (ถ้าเปิดใช้) ก่อนรับเข้าระบบ
     const verify = await slipok.verifySlip(buffer, order.total);
-    if (verify.status === "duplicate" || verify.status === "wrong_amount" || verify.status === "invalid") {
+    if (slipok.isReject(verify.status)) {
       order.state = "await_slip"; // คืนสถานะให้ลองส่งใหม่
       store.saveOrder(orderId, order);
       lockedOrder = null;
-      const msg =
-        verify.status === "duplicate" ? "สลิปนี้ถูกใช้ไปแล้ว กรุณาโอนใหม่แล้วแนบสลิปที่ถูกต้องครับ" :
-        verify.status === "wrong_amount" ? `ยอดโอนไม่ตรงครับ (สลิป ${verify.slipAmount}.- ต้องโอน ${order.total}.-)` :
-        "อ่านสลิปไม่ได้ กรุณาแนบรูปสลิปที่ชัดเจนครับ";
-      return res.status(400).json({ error: msg });
+      return res.status(400).json({ error: verify.customerMessage });
     }
 
     const slipFile = await saveSlipImage(buffer, orderId, order.slipToken);
@@ -880,16 +876,12 @@ async function handleImage(replyToken, userId, messageId) {
 
     // ตรวจสลิปกับ SlipOK (ถ้าเปิดใช้)
     const verify = await slipok.verifySlip(buffer, order.total);
-    if (verify.status === "duplicate" || verify.status === "wrong_amount" || verify.status === "invalid") {
+    if (slipok.isReject(verify.status)) {
       order.state = "await_slip"; // คืนสถานะให้ส่งสลิปใหม่ได้
       session.state = "await_slip";
       store.saveOrder(orderId, order);
       store.saveSession(userId, session);
-      const msg =
-        verify.status === "duplicate" ? "❌ สลิปนี้ถูกใช้ไปแล้ว กรุณาโอนใหม่แล้วส่งสลิปที่ถูกต้องครับ" :
-        verify.status === "wrong_amount" ? `❌ ยอดโอนไม่ตรงครับ (สลิป ${verify.slipAmount}.- ต้องโอน ${order.total}.-)\nกรุณาโอนให้ครบแล้วส่งสลิปใหม่ครับ` :
-        "❌ อ่านสลิปไม่ได้ กรุณาส่งรูปสลิปที่ชัดเจนครับ";
-      return reply(replyToken, [{ type: "text", text: msg }]);
+      return reply(replyToken, [{ type: "text", text: "❌ " + verify.customerMessage }]);
     }
 
     // ย่อ+บีบอัด+เขียนแบบ async (ไม่บล็อก event loop)
