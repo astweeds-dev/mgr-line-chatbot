@@ -20,9 +20,9 @@ mgr-line-chatbot/
 ├── app.js                     # Main server — Express + LINE webhook + order API + rate limiter
 ├── db.js                      # SQLite persistence layer (orders + sessions)
 ├── slipok.js                  # SlipOK slip verification (optional, auto-confirm)
-├── watchdog.js                # Production watchdog — server+tunnel lifecycle, health check, LINE alerts
+├── watchdog.js                # MGR Main watchdog — server+tunnel lifecycle, health check, LINE alerts
 ├── package.json
-├── .env                       # Production credentials (gitignored)
+├── .env                       # MGR Main credentials (gitignored)
 ├── .env.development           # Dev credentials (gitignored)
 ├── public/
 │   └── order.html             # Ordering web UI — bilingual (Thai/English), GrabFood-style
@@ -38,7 +38,7 @@ mgr-line-chatbot/
 ├── create-rich-menu.js        # Alternative rich menu setup
 ├── generate-rich-menu-image.js # Generates rich menu button image via sharp
 ├── update-webhook.js          # Sets LINE webhook URL
-├── start-all.bat              # Production: runs watchdog.js (auto-restart loop)
+├── start-all.bat              # MGR Main: runs watchdog.js (auto-restart loop)
 ├── start-dev.bat              # Dev: server + tunnel + webhook (no watchdog)
 ├── setup-autostart.bat        # Creates Windows Task Scheduler task for auto-start on boot
 ├── setup-named-tunnel.bat     # Interactive: Cloudflare Named Tunnel setup (fixed URL, requires domain)
@@ -66,7 +66,7 @@ TUNNEL_HOSTNAME=xxx            # e.g. mgr.example.com
 ## Environment Separation
 - `NODE_ENV=production` (default) → loads `.env`, uses `data/mgr.production.db`
 - `NODE_ENV=development` → loads `.env.development`, uses `data/mgr.development.db`
-- Dev uses a separate LINE Channel from Production to avoid affecting customers
+- DEV uses a separate LINE Channel from MGR Main to avoid affecting customers
 - app.js auto-selects env file on startup
 
 ## How It Works (Order Flow)
@@ -171,7 +171,7 @@ Server uses `parseCartKey()` + `calcUnitPrice()` to recompute prices server-side
 
 ## Running
 ```bash
-# Production (ลูกค้าใช้)
+# MGR Main (ลูกค้าใช้)
 start-all.bat              # watchdog.js (auto-restart + LINE alerts + tunnel)
 
 # Development (ทดสอบ ไม่กระทบลูกค้า)

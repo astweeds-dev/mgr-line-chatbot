@@ -5,7 +5,7 @@ LINE Chatbot for Merry.Go"Round STUDIO — food & drinks ordering, payment via P
 ## Tech Stack
 - Node.js + Express + @line/bot-sdk v9 + sharp
 - Vanilla HTML/CSS/JS frontend (single file: `public/order.html`)
-- Cloudflare Tunnel for dev, Railway for production deployment
+- Cloudflare Tunnel (Quick Tunnel) for both MGR Main and DEV
 - SQLite (better-sqlite3) for persistence — orders + sessions in `data/mgr.{env}.db`; Maps act as in-memory cache, loaded on boot. orderCounter persisted to `data/counter.{env}.json`
 
 ## Project Structure
@@ -21,7 +21,7 @@ watchdog.js                # Production watchdog — manages server+tunnel, auto
 data/mgr.{env}.db          # SQLite database (gitignored — runtime state)
 data/counter.{env}.json    # Order counter persistence (survives restart)
 data/watchdog.log          # Watchdog event log (auto-rotated at 5MB)
-setup-rich-menu.js         # Creates 3-button Rich Menu (Food/Drinks/Contact)
+setup-rich-menu.js         # Creates 2-button Rich Menu (Food-Drinks/Contact)
 update-webhook.js          # Sets LINE webhook URL
 start-all.bat              # Production: runs watchdog.js (auto-restart loop)
 start-dev.bat              # Dev: server + tunnel + webhook (no watchdog)
@@ -32,12 +32,12 @@ setup-named-tunnel.bat     # Interactive: creates Cloudflare Named Tunnel for fi
 ## Environment Setup (done 2026-06-21)
 Two environments are fully separated:
 
-| | Production | Development |
+| | MGR Main (ร้านจริง) | DEV (ทดสอบ) |
 |---|---|---|
 | ENV file | `.env` | `.env.development` |
-| LINE Channel | MGR production bot | MGR Dev (separate channel) |
+| LINE Channel | MGR Main bot | MGR Dev (separate channel) |
 | Run command | `start-all.bat` | `start-dev.bat` or `npm run dev` |
-| Webhook | Auto-updated by start-all.bat | Auto-updated by start-dev.bat |
+| Webhook | Auto-updated by watchdog | Auto-updated by start-dev.bat |
 
 `app.js` auto-selects env file based on `NODE_ENV`:
 ```js
@@ -107,8 +107,9 @@ Token comes from URL param `?t={token}` (30-min TTL, created by bot when user ta
 ## Production Watchdog (`watchdog.js`)
 Node.js process that manages the entire production stack:
 - **Starts & manages** server (`node app.js`) + Cloudflare Tunnel as child processes
+- **Auto-finds cloudflared** — searches PATH + default install paths
 - **Tunnel modes**: Quick Tunnel (random URL, auto-extract) or Named Tunnel (fixed URL via `TUNNEL_NAME`/`TUNNEL_HOSTNAME` in .env)
-- **Auto-extracts** tunnel URL → updates `.env` BASE_URL → restarts server → updates LINE webhook
+- **Auto-extracts** tunnel URL → updates `.env` BASE_URL → updates LINE webhook (no server restart needed — app.js reads BASE_URL dynamically)
 - **Health monitoring** every 30 seconds via `/health` endpoint
 - **Auto-restart** crashed server or tunnel immediately
 - **LINE alerts** to admin: system up 🟢, server down 🔴, tunnel down ⚠️, recovered ✅, shutdown 🔴
@@ -136,8 +137,8 @@ Project is **feature-complete** — food & drinks ordering, payment, slip verifi
 ```bash
 npm run dev          # Dev server with nodemon (no tunnel)
 npm run dev:tunnel   # start-dev.bat (server + tunnel + webhook)
-npm start            # Production server (direct, no watchdog)
-start-all.bat        # Production with watchdog (auto-restart + LINE alerts + tunnel)
+npm start            # MGR Main server (direct, no watchdog)
+start-all.bat        # MGR Main with watchdog (auto-restart + LINE alerts + tunnel)
 setup-autostart.bat  # Set up auto-start on Windows boot (run as administrator)
 setup-named-tunnel.bat  # Set up Cloudflare Named Tunnel for fixed URL (requires domain)
 ```
