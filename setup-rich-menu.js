@@ -10,7 +10,10 @@ const client = new messagingApi.MessagingApiClient({
 
 const WIDTH = 2500;
 const HEIGHT = 843;
-const COL = Math.floor(WIDTH / 3);
+const COL = Math.floor(WIDTH / 2); // 2 ปุ่ม: สั่งอาหาร | ติดต่อร้าน
+
+// ฟอนต์ที่รองรับภาษาไทย (มีบน Windows) + fallback
+const FONT = "'Leelawadee UI','Tahoma','Sarabun',sans-serif";
 
 const richMenu = {
   size: { width: WIDTH, height: HEIGHT },
@@ -20,37 +23,31 @@ const richMenu = {
   areas: [
     {
       bounds: { x: 0, y: 0, width: COL, height: HEIGHT },
-      action: { type: "message", text: "อาหาร" },
+      action: { type: "message", text: "Food / Drinks" },
     },
     {
-      bounds: { x: COL, y: 0, width: COL, height: HEIGHT },
-      action: { type: "message", text: "เครื่องดื่มและกาแฟ" },
-    },
-    {
-      bounds: { x: COL * 2, y: 0, width: COL + 1, height: HEIGHT },
+      bounds: { x: COL, y: 0, width: WIDTH - COL, height: HEIGHT },
       action: { type: "message", text: "ติดต่อเจ้าหน้าที่" },
     },
   ],
 };
 
 async function generateImage() {
+  const cx1 = COL / 2;
+  const cx2 = COL + (WIDTH - COL) / 2;
+  // ธีมสีเหลืองครีมเหมือน hero ในหน้าสั่งออเดอร์: พื้น #FFF9C4, ตัวอักษร #5A4F00
   const svg = `<svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg">
-    <rect x="0"        y="0" width="${COL}" height="${HEIGHT}" fill="#E85D3A"/>
-    <rect x="${COL}"    y="0" width="${COL}" height="${HEIGHT}" fill="#6F4E37"/>
-    <rect x="${COL * 2}" y="0" width="${COL + 1}" height="${HEIGHT}" fill="#2196F3"/>
+    <rect x="0"     y="0" width="${COL}"          height="${HEIGHT}" fill="#FFF9C4"/>
+    <rect x="${COL}" y="0" width="${WIDTH - COL}" height="${HEIGHT}" fill="#FFF9C4"/>
 
-    <line x1="${COL}" y1="0" x2="${COL}" y2="${HEIGHT}" stroke="#fff" stroke-width="4"/>
-    <line x1="${COL * 2}" y1="0" x2="${COL * 2}" y2="${HEIGHT}" stroke="#fff" stroke-width="4"/>
+    <line x1="${COL}" y1="70" x2="${COL}" y2="${HEIGHT - 70}" stroke="#EAD98A" stroke-width="5"/>
 
-    <text x="${COL / 2}" y="340" text-anchor="middle" font-size="140" fill="#fff">🍱</text>
-    <text x="${COL / 2}" y="520" text-anchor="middle" font-family="Arial,sans-serif" font-size="80" font-weight="bold" fill="#fff">Food</text>
+    <text x="${cx1}" y="350" text-anchor="middle" font-size="150">🍱☕</text>
+    <text x="${cx1}" y="565" text-anchor="middle" font-family="${FONT}" font-size="96" font-weight="bold" fill="#5A4F00">Food / Drinks</text>
 
-    <text x="${COL + COL / 2}" y="340" text-anchor="middle" font-size="140" fill="#fff">☕</text>
-    <text x="${COL + COL / 2}" y="500" text-anchor="middle" font-family="Arial,sans-serif" font-size="65" font-weight="bold" fill="#fff">Drinks</text>
-    <text x="${COL + COL / 2}" y="590" text-anchor="middle" font-family="Arial,sans-serif" font-size="55" fill="#ffffffcc">&amp; Coffee</text>
-
-    <text x="${COL * 2 + COL / 2}" y="340" text-anchor="middle" font-size="140" fill="#fff">📞</text>
-    <text x="${COL * 2 + COL / 2}" y="520" text-anchor="middle" font-family="Arial,sans-serif" font-size="70" font-weight="bold" fill="#fff">Contact</text>
+    <text x="${cx2}" y="320" text-anchor="middle" font-size="140">📞</text>
+    <text x="${cx2}" y="510" text-anchor="middle" font-family="${FONT}" font-size="80" font-weight="bold" fill="#5A4F00">ติดต่อเจ้าหน้าที่</text>
+    <text x="${cx2}" y="620" text-anchor="middle" font-family="${FONT}" font-size="62" font-weight="bold" fill="#5A4F00">063-881-0439</text>
   </svg>`;
 
   return sharp(Buffer.from(svg)).png().toBuffer();

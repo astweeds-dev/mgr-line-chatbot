@@ -2,8 +2,12 @@ const express = require("express");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const sharp = require("sharp");
 const { middleware, messagingApi } = require("@line/bot-sdk");
-require("dotenv").config();
+const NODE_ENV = (process.env.NODE_ENV || "production").trim();
+const envFile = NODE_ENV === "development" ? ".env.development" : ".env";
+require("dotenv").config({ path: envFile });
+console.log(`[ENV] Running in ${NODE_ENV} mode (loaded ${envFile})`);
 
 const config = {
   channelSecret: process.env.CHANNEL_SECRET,
@@ -11,6 +15,36 @@ const config = {
 };
 const ADMIN_ID = process.env.ADMIN_USER_ID;
 const BASE_URL = process.env.BASE_URL;
+
+// จุดจัดส่งในร้าน (ตรงกับ LOCATIONS ใน public/order.html)
+const DELIVERY_LOCATIONS = [
+  "ห้องซ้อมเล็ก",
+  "ห้องซ้อมใหญ่",
+  "ห้องสตูดิโอ",
+  "ลานนั่งหน้ามินิบาร์",
+];
+
+// บรรทัดข้อมูลจัดส่ง/ลูกค้า สำหรับแสดงให้แอดมิน
+function deliveryText(order) {
+  const d = order && order.delivery;
+  if (!d) return "";
+  return `📍 ${d.location}\n👤 ${d.name}  📞 ${d.phone}`;
+}
+
+const SLIP_DIR = path.join(__dirname, "images", "slips");
+
+// ย่อ+บีบอัดรูปสลิป แล้วเขียนแบบ async (sharp ทำงานบน threadpool — ไม่บล็อก event loop)
+// คืนค่าชื่อไฟล์ที่บันทึก
+async function saveSlipImage(buffer, orderId, slipToken) {
+  await fs.promises.mkdir(SLIP_DIR, { recursive: true });
+  const slipFile = `${orderId}-${slipToken.slice(0, 10)}.jpg`;
+  await sharp(buffer)
+    .rotate() // หมุนตาม EXIF ให้ตั้งตรง
+    .resize({ width: 1500, height: 1500, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 80 })
+    .toFile(path.join(SLIP_DIR, slipFile));
+  return slipFile;
+}
 
 const client = new messagingApi.MessagingApiClient({
   channelAccessToken: config.channelAccessToken,
@@ -27,12 +61,121 @@ const ADDONS = [
   { id: "sauce", label: "ซอส" },
 ];
 
+// add-on เฉพาะเมนูกาแฟ (ต้องตรงกับ COFFEE_ADDONS ใน public/order.html)
+const COFFEE_ADDON_PRICES = { "น้ำผึ้ง": 10, "คาราเมลไซรัป": 10, "นมโอ๊ต": 20, "เพิ่มช็อต": 20 };
+// add-on เฉพาะเมนูนม (ต้องตรงกับ MILK_ADDONS ใน public/order.html)
+const MILK_ADDON_PRICES = { "น้ำผึ้ง": 10, "คาราเมลไซรัป": 10 };
+
+// ⚠️ ราคาเมนู — ต้องตรงกับ MENU/ADDONS ใน public/order.html เสมอ
+// ใช้คิดยอดรวมฝั่ง server ไม่เชื่อราคาที่เว็บส่งมา (กันลูกค้าแก้ราคา)
+const MENU_PRICES = {
+  1:  { price: { default: 50 }, addons: { หมูสับ: 10, พิเศษ: 20 } },
+  3:  { price: { หมู: 70, เนื้อ: 80 } },
+  4:  { price: { หมู: 70, เนื้อ: 80 } },
+  5:  { price: { หมู: 70, เนื้อ: 80 } },
+  6:  { price: { หมู: 70, เนื้อ: 80 } },
+  7:  { price: { หมู: 70, เนื้อ: 80 } },
+  8:  { price: { หมู: 70, เนื้อ: 80 } },
+  9:  { price: { หมู: 80, เนื้อ: 90 } },
+  10: { price: { หมู: 80, เนื้อ: 90 } },
+  11: { price: { หมู: 80, เนื้อ: 90 } },
+  12: { price: { หมู: 90, เนื้อ: 100 } },
+  13: { price: { หมู: 90, เนื้อ: 100 } },
+  14: { price: { default: 90 } },
+  15: { price: { หมู: 90, เนื้อ: 100 } },
+  // ☕ กาแฟ — variant = เมล็ด (คั่วอ่อน/คั่วเข้ม) ราคาเท่ากัน + add-on เฉพาะกาแฟ
+  20: { price: { "คั่วอ่อน": 70, "คั่วเข้ม": 70 }, addons: COFFEE_ADDON_PRICES },
+  21: { price: { "คั่วอ่อน": 70, "คั่วเข้ม": 70 }, addons: COFFEE_ADDON_PRICES },
+  22: { price: { "คั่วอ่อน": 70, "คั่วเข้ม": 70 }, addons: COFFEE_ADDON_PRICES },
+  23: { price: { "คั่วอ่อน": 70, "คั่วเข้ม": 70 }, addons: COFFEE_ADDON_PRICES },
+  24: { price: { "คั่วอ่อน": 80, "คั่วเข้ม": 80 }, addons: COFFEE_ADDON_PRICES },
+  // 🥛 นม — add-on น้ำผึ้ง/คาราเมลไซรัป (ความหวาน/โน้ตไม่กระทบราคา)
+  30: { price: { default: 70 }, addons: MILK_ADDON_PRICES },
+  31: { price: { default: 70 }, addons: MILK_ADDON_PRICES },
+  32: { price: { default: 70 }, addons: MILK_ADDON_PRICES },
+  33: { price: { default: 70 }, addons: MILK_ADDON_PRICES },
+  34: { price: { default: 70 }, addons: MILK_ADDON_PRICES },
+  35: { price: { default: 70 }, addons: MILK_ADDON_PRICES },
+  // 🥤 Italian Soda — ราคาเดียว ไม่มี add-on (addons: {} → ปฏิเสธ add-on ทุกชนิด)
+  40: { price: { default: 70 }, addons: {} },
+  41: { price: { default: 70 }, addons: {} },
+  42: { price: { default: 70 }, addons: {} },
+  43: { price: { default: 70 }, addons: {} },
+  44: { price: { default: 70 }, addons: {} },
+  45: { price: { default: 70 }, addons: {} },
+  46: { price: { default: 70 }, addons: {} },
+  47: { price: { default: 70 }, addons: {} },
+  48: { price: { default: 70 }, addons: {} },
+};
+const DEFAULT_ADDON_PRICES = { ไข่ดาว: 15, ไข่เจียว: 20, พิเศษ: 20 };
+
+// key รูปแบบ "3-หมู:พิเศษ,ไข่ดาว" → { id:3, meat:"หมู", addons:["พิเศษ","ไข่ดาว"] }
+function parseCartKey(key) {
+  let addons = [], rest = String(key);
+  const ci = rest.indexOf(":");
+  if (ci !== -1) { addons = rest.slice(ci + 1).split(","); rest = rest.slice(0, ci); }
+  let id, meat = null;
+  const di = rest.indexOf("-");
+  if (di !== -1) { id = +rest.slice(0, di); meat = rest.slice(di + 1); }
+  else { id = +rest; }
+  return { id, meat, addons };
+}
+
+function calcUnitPrice(key) {
+  const { id, meat, addons } = parseCartKey(key);
+  const m = MENU_PRICES[id];
+  if (!m) return null;
+  let p = meat ? m.price[meat] : m.price.default;
+  if (p == null) return null;
+  const addonPrices = m.addons || DEFAULT_ADDON_PRICES;
+  for (const a of addons) {
+    if (addonPrices[a] == null) return null;
+    p += addonPrices[a];
+  }
+  return p;
+}
+
+// คิดยอดรวมจาก key+qty ของแต่ละรายการ; คืน null ถ้าข้อมูลผิด
+function computeOrderTotal(items) {
+  let total = 0;
+  for (const it of items) {
+    const qty = Number(it.qty);
+    if (!Number.isInteger(qty) || qty < 1) return null;
+    const up = calcUnitPrice(it.key);
+    if (up == null) return null;
+    total += up * qty;
+  }
+  return total;
+}
+
 // ==================== Session, Orders, Tokens ====================
 
 const sessions = new Map();
 const pendingOrders = new Map();
 const orderTokens = new Map();
-let orderCounter = 0;
+
+// คงค่า orderCounter ข้ามการ restart (กัน orderId ซ้ำ → สลิป/ยอดเงินไม่สลับกัน)
+// แยกไฟล์ตาม NODE_ENV เพื่อไม่ให้ dev/prod ใช้เลขเดียวกัน
+const COUNTER_FILE = path.join(__dirname, "data", `counter.${NODE_ENV}.json`);
+function loadCounter() {
+  try {
+    const n = JSON.parse(fs.readFileSync(COUNTER_FILE, "utf8")).orderCounter;
+    return Number.isInteger(n) && n >= 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+function saveCounter() {
+  try {
+    const dir = path.dirname(COUNTER_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(COUNTER_FILE, JSON.stringify({ orderCounter }));
+  } catch (e) {
+    console.error("saveCounter error:", e.message);
+  }
+}
+let orderCounter = loadCounter();
+console.log(`[ORDER] starting orderCounter at ${orderCounter}`);
 
 const TOKEN_TTL = 30 * 60 * 1000;
 
@@ -66,11 +209,42 @@ app.use(express.static(path.join(__dirname, "public")));
 app.get("/", (_req, res) => res.send("MGR LINE Chatbot is running!"));
 app.get("/health", (_req, res) => res.json({ status: "ok", uptime: process.uptime() }));
 
+if (NODE_ENV === "development") {
+  app.get("/api/test-token", (req, res) => {
+    const uid = req.query.uid || "TEST_USER";
+    const token = createToken(uid);
+    res.json({ token, url: `/order.html?t=${token}` });
+  });
+  app.get("/api/test-orders", (_req, res) => {
+    const orders = [];
+    for (const [orderId, o] of pendingOrders) {
+      orders.push({ orderId, userId: o.userId, total: o.total, state: o.state });
+    }
+    res.json({ count: orders.length, orderCounter, orders });
+  });
+}
+
 // ==================== API: รับออเดอร์จากเว็บ ====================
 
 app.post("/api/order", express.json(), async (req, res) => {
   try {
-    const { token, items, addons, total } = req.body;
+    const { token, items, addons, delivery } = req.body;
+    const clientTotal = req.body.total;
+
+    // ตรวจจุดจัดส่ง + ชื่อ/เบอร์ (ไม่เชื่อค่าจากเว็บล้วนๆ — validate ฝั่ง server)
+    const d = delivery || {};
+    const dLoc = (d.location || "").toString().trim();
+    const dName = (d.name || "").toString().trim().slice(0, 40);
+    const dPhone = (d.phone || "").toString().trim().slice(0, 20);
+    if (
+      !DELIVERY_LOCATIONS.includes(dLoc) ||
+      !dName ||
+      dPhone.replace(/\D/g, "").length < 9
+    ) {
+      return res
+        .status(400)
+        .json({ error: "กรุณาเลือกจุดจัดส่ง และกรอกชื่อ/เบอร์โทรให้ครบ" });
+    }
 
     const tokenData = orderTokens.get(token);
     if (!tokenData) {
@@ -81,13 +255,24 @@ app.post("/api/order", express.json(), async (req, res) => {
       return res.status(401).json({ error: "ลิงก์หมดอายุ กรุณากดปุ่ม Food อีกครั้ง" });
     }
     const userId = tokenData.userId;
-    orderTokens.delete(token);
+    // ไม่ลบ token ที่นี่ — ปล่อยให้ใช้ซ้ำได้จนหมดอายุ (30 นาที)
+    // เพื่อให้ปุ่ม "แก้ไขออเดอร์" / "สั่งเพิ่มเติม" กดยืนยันใหม่ได้
 
     if (!items || items.length === 0) {
       return res.status(400).json({ error: "กรุณาเลือกอย่างน้อย 1 เมนู" });
     }
 
+    // คิดยอดรวมเองฝั่ง server — ไม่เชื่อค่าจากเว็บ
+    const total = computeOrderTotal(items);
+    if (total == null) {
+      return res.status(400).json({ error: "ข้อมูลออเดอร์ไม่ถูกต้อง กรุณาลองใหม่" });
+    }
+    if (typeof clientTotal === "number" && clientTotal !== total) {
+      console.warn(`[TOTAL MISMATCH] user=${userId} client=${clientTotal} server=${total}`);
+    }
+
     orderCounter++;
+    saveCounter();
     const orderId = `MGR${String(orderCounter).padStart(4, "0")}`;
 
     const summaryLines = items.map(
@@ -111,18 +296,27 @@ app.post("/api/order", express.json(), async (req, res) => {
       }
     }
 
+    const slipToken = crypto.randomBytes(16).toString("hex");
     pendingOrders.set(orderId, {
       userId,
+      items: items.map((it) => ({ name: it.name, qty: it.qty, price: it.price })),
       summary,
       total,
+      delivery: { location: dLoc, name: dName, phone: dPhone },
       state: "await_slip",
+      slipToken,
     });
 
     session.state = "await_slip";
     session.orderId = orderId;
 
+    res.json({ success: true, orderId, slipToken });
+
+    // dev: test order (uid ขึ้นต้น "TEST") — ข้ามการ push LINE ทั้งหมด กัน quota/สแปมแอดมินจริง
+    if (userId.startsWith("TEST")) return;
+
     const qrUrl = `${BASE_URL}/images/qr-payment.jpg`;
-    await client.pushMessage({
+    client.pushMessage({
       to: userId,
       messages: [
         {
@@ -166,6 +360,15 @@ app.post("/api/order", express.json(), async (req, res) => {
                   align: "center",
                 },
                 { type: "separator" },
+                {
+                  type: "text",
+                  text: `📍 ${dLoc}\n👤 ${dName}  📞 ${dPhone}`,
+                  size: "sm",
+                  weight: "bold",
+                  color: "#5A4F00",
+                  wrap: true,
+                },
+                { type: "separator" },
                 { type: "text", text: summary, size: "sm", color: "#666666", wrap: true },
                 {
                   type: "text",
@@ -184,7 +387,7 @@ app.post("/api/order", express.json(), async (req, res) => {
               contents: [
                 {
                   type: "text",
-                  text: "📸 โอนเสร็จแล้ว ส่งรูปสลิปมาเลยครับ",
+                  text: "📸 โอนเสร็จแล้ว แนบสลิปในหน้าออเดอร์ หรือส่งรูปมาในแชทได้เลยครับ",
                   size: "sm",
                   color: "#27AE60",
                   align: "center",
@@ -193,8 +396,19 @@ app.post("/api/order", express.json(), async (req, res) => {
                 },
                 {
                   type: "button",
-                  style: "secondary",
+                  style: "primary",
+                  color: "#27AE60",
                   margin: "md",
+                  height: "sm",
+                  action: {
+                    type: "uri",
+                    label: "📋 เปิดหน้าออเดอร์/แนบสลิป",
+                    uri: `${BASE_URL}/order.html?oid=${orderId}&s=${slipToken}`,
+                  },
+                },
+                {
+                  type: "button",
+                  style: "secondary",
                   height: "sm",
                   action: {
                     type: "postback",
@@ -209,25 +423,85 @@ app.post("/api/order", express.json(), async (req, res) => {
           },
         },
       ],
-    });
+    }).catch(err => console.error("Payment msg error:", err.message));
 
-    if (ADMIN_ID) {
-      await client.pushMessage({
-        to: ADMIN_ID,
-        messages: [
-          {
-            type: "text",
-            text: `📋 ออเดอร์ใหม่ #${orderId}\n\n${summary}\n\n💰 รวม: ${total}.-\n⏳ รอชำระเงิน`,
-          },
-        ],
-      });
-    }
-
-    res.json({ success: true, orderId });
+    // หมายเหตุ: ไม่แจ้งแอดมินตอนนี้ (ประหยัด push) — แจ้งตอนสลิปมาพร้อมปุ่มยืนยันแทน
   } catch (err) {
     console.error("Order error:", err);
     res.status(500).json({ error: "Server error" });
   }
+});
+
+// ==================== API: แนบสลิปจากหน้าเว็บ ====================
+
+app.post("/api/slip", express.json({ limit: "15mb" }), async (req, res) => {
+  let lockedOrder = null;
+  try {
+    const { orderId, slipToken, image } = req.body;
+
+    const order = pendingOrders.get(orderId);
+    if (!order || !slipToken || order.slipToken !== slipToken) {
+      return res.status(401).json({ error: "ออเดอร์ไม่ถูกต้องหรือหมดอายุ" });
+    }
+    if (order.state !== "await_slip") {
+      return res.status(409).json({ error: "ออเดอร์นี้ส่งสลิปไปแล้วครับ" });
+    }
+    if (!image || typeof image !== "string") {
+      return res.status(400).json({ error: "ไม่พบไฟล์สลิป" });
+    }
+    const m = image.match(/^data:image\/(png|jpe?g);base64,(.+)$/);
+    if (!m) {
+      return res.status(400).json({ error: "ไฟล์ต้องเป็นรูปภาพ (JPG/PNG)" });
+    }
+    const buffer = Buffer.from(m[2], "base64");
+    if (buffer.length > 12 * 1024 * 1024) {
+      return res.status(413).json({ error: "ไฟล์ใหญ่เกินไป" });
+    }
+
+    // จองสถานะก่อน (sync) กันส่งสลิปซ้ำซ้อนตอนคนเยอะ — คืนสถานะถ้าเขียนไฟล์ล้มเหลว
+    order.state = "slip_sent";
+    lockedOrder = order;
+
+    const slipFile = await saveSlipImage(buffer, orderId, order.slipToken);
+
+    order.slipUrl = `${BASE_URL}/images/slips/${slipFile}`;
+    const cs = getSession(order.userId);
+    cs.state = "await_confirm";
+
+    res.json({ success: true });
+    lockedOrder = null; // สำเร็จแล้ว ไม่ต้องคืนสถานะ
+
+    // dev: test order (uid ขึ้นต้น "TEST") — ข้ามการ push LINE ทั้งหมด กันสแปมแอดมินจริง
+    if (order.userId.startsWith("TEST")) return;
+
+    notifyAdminSlip(orderId, order).catch((err) =>
+      console.error("Admin slip (web) error:", err.message)
+    );
+    client.pushMessage({
+      to: order.userId,
+      messages: [
+        {
+          type: "text",
+          text: `✅ ได้รับสลิปออเดอร์ #${orderId} แล้วครับ\nรอร้านค้ายืนยันสักครู่นะครับ 🙏`,
+        },
+      ],
+    }).catch(() => {});
+  } catch (err) {
+    console.error("Web slip error:", err);
+    if (lockedOrder) lockedOrder.state = "await_slip"; // คืนสถานะให้ลองส่งใหม่ได้
+    if (!res.headersSent) res.status(500).json({ error: "เกิดข้อผิดพลาด กรุณาลองใหม่" });
+  }
+});
+
+// ==================== API: เปิดหน้าออเดอร์เดิม (resume) ====================
+
+app.get("/api/order-status", (req, res) => {
+  const { oid, s } = req.query;
+  const order = pendingOrders.get(oid);
+  if (!order || !s || order.slipToken !== s) {
+    return res.status(404).json({ error: "ไม่พบออเดอร์ หรือออเดอร์หมดอายุแล้ว" });
+  }
+  res.json({ orderId: oid, items: order.items || [], total: order.total, state: order.state });
 });
 
 // ==================== LINE Webhook ====================
@@ -236,12 +510,12 @@ app.post(
   "/webhook",
   middleware({ channelSecret: config.channelSecret }),
   (req, res) => {
-    Promise.all(req.body.events.map(handleEvent))
-      .then(() => res.json({ success: true }))
-      .catch((err) => {
-        console.error(err);
-        res.status(500).end();
-      });
+    // ตอบ LINE ทันที (กัน webhook timeout → LINE retry → ประมวลผลซ้ำตอนคนเยอะ)
+    res.json({ success: true });
+    // แล้วค่อยประมวลผล event เบื้องหลัง (reply ใช้ replyToken ได้อยู่)
+    Promise.all(req.body.events.map(handleEvent)).catch((err) =>
+      console.error("handleEvent error:", err)
+    );
   }
 );
 
@@ -288,14 +562,38 @@ async function handleText(replyToken, userId, text) {
     ]);
   }
 
-  if (text === "อาหาร" || text === "เมนูอาหาร" || text === "สั่งอาหาร") {
+  if (userId === ADMIN_ID && (text === "ออเดอร์" || text === "pending")) {
+    const pending = [];
+    for (const [oid, order] of pendingOrders) {
+      const stateLabel =
+        order.state === "await_slip" ? "⏳ รอสลิป" :
+        order.state === "slip_sent" ? "📸 รอยืนยัน" :
+        order.state === "confirmed" ? "✅ ยืนยันแล้ว" : order.state;
+      const dLine = deliveryText(order);
+      pending.push(
+        `#${oid} ${stateLabel}\n${dLine ? dLine + "\n" : ""}${order.summary}\n💰 ${order.total}.-`
+      );
+    }
+    if (pending.length === 0) {
+      return reply(replyToken, [{ type: "text", text: "📋 ไม่มีออเดอร์ค้างครับ" }]);
+    }
+    return reply(replyToken, [
+      { type: "text", text: `📋 ออเดอร์ทั้งหมด (${pending.length} รายการ)\n\n${pending.join("\n\n──────────\n\n")}` },
+    ]);
+  }
+
+  if (
+    text === "อาหาร" || text === "เมนูอาหาร" || text === "สั่งอาหาร" ||
+    text === "Food / Drinks" || text === "อาหาร/เครื่องดื่ม" || text === "เครื่องดื่มและกาแฟ" ||
+    text === "เมนูกาแฟ" || text === "กาแฟ" || text === "เครื่องดื่ม"
+  ) {
     const token = createToken(userId);
     const orderUrl = `${BASE_URL}/order.html?t=${token}`;
 
     return reply(replyToken, [
       {
         type: "flex",
-        altText: "🍱 กดเพื่อเปิดเมนูอาหาร",
+        altText: "🍱 กดเพื่อเปิดเมนูสั่งอาหาร",
         contents: {
           type: "bubble",
           body: {
@@ -304,14 +602,15 @@ async function handleText(replyToken, userId, text) {
             contents: [
               {
                 type: "text",
-                text: "🍱 MGR สั่งอาหาร",
+                text: "🍱☕ MGR สั่งอาหาร & เครื่องดื่ม",
                 weight: "bold",
-                size: "xl",
+                size: "lg",
                 align: "center",
+                wrap: true,
               },
               {
                 type: "text",
-                text: "เลือกเมนู กดจำนวน ยืนยัน\nจบในหน้าเดียว!",
+                text: "อาหารตามสั่ง · กาแฟ · นม · โซดา\nเลือกเมนู กดจำนวน ยืนยัน จบในหน้าเดียว!",
                 size: "sm",
                 color: "#888888",
                 align: "center",
@@ -328,11 +627,11 @@ async function handleText(replyToken, userId, text) {
               {
                 type: "button",
                 style: "primary",
-                color: "#E85D3A",
+                color: "#5A4F00",
                 height: "md",
                 action: {
                   type: "uri",
-                  label: "🍱 เปิดเมนูอาหาร",
+                  label: "🍱 เปิดเมนูสั่งอาหาร",
                   uri: orderUrl,
                 },
               },
@@ -344,17 +643,14 @@ async function handleText(replyToken, userId, text) {
     ]);
   }
 
-  if (text === "เครื่องดื่มและกาแฟ" || text === "เมนูกาแฟ") {
-    return reply(replyToken, [
-      { type: "text", text: "☕ เมนูเครื่องดื่มกำลังจะมาเร็วๆ นี้ครับ" },
-    ]);
-  }
-
-  if (text === "ติดต่อเจ้าหน้าที่" || text === "ติดต่อแอดมิน") {
+  if (text === "ติดต่อเจ้าหน้าที่" || text === "ติดต่อแอดมิน" || text === "ติดต่อร้าน") {
     return reply(replyToken, [
       {
         type: "text",
-        text: "📞 ติดต่อร้าน MGR\n📍 ที่อยู่: ร้าน MGR สั่งอาหาร/กาแฟ\n⏰ เวลาเปิด: 08:00 - 20:00 น.\n\nพิมพ์ข้อความไว้ได้เลย เจ้าหน้าที่จะติดต่อกลับครับ",
+        text:
+          "🏠 Hipsder Bar - Coffee & Beer\n" +
+          "📞 063-881-0439\n" +
+          "📍 แผนที่ร้าน: https://maps.app.goo.gl/wsXrsjzZJbjNwxTj9",
       },
     ]);
   }
@@ -365,6 +661,109 @@ async function handleText(replyToken, userId, text) {
       text: "สวัสดีครับ ยินดีต้อนรับ MGR สั่งอาหาร/กาแฟ 🙏\nกดเมนูด้านล่างเพื่อสั่งได้เลยครับ",
     },
   ]);
+}
+
+// ==================== แจ้งสลิปให้แอดมิน (ใช้ร่วมกัน: LINE + เว็บ) ====================
+
+function adminSlipFlex(orderId, order) {
+  return {
+    type: "flex",
+    altText: `💳 สลิป #${orderId} - รวม ${order.total}.-`,
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box",
+        layout: "vertical",
+        contents: [
+          { type: "text", text: `💳 สลิป #${orderId}`, weight: "bold", size: "lg", color: "#E85D3A" },
+        ],
+        backgroundColor: "#FFF8E7",
+        paddingAll: "15px",
+      },
+      hero: {
+        type: "image",
+        url: order.slipUrl,
+        size: "full",
+        aspectRatio: "1:1.4",
+        aspectMode: "fit",
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        contents: [
+          ...(deliveryText(order)
+            ? [
+                {
+                  type: "text",
+                  text: deliveryText(order),
+                  size: "sm",
+                  weight: "bold",
+                  color: "#5A4F00",
+                  wrap: true,
+                },
+                { type: "separator", margin: "md" },
+              ]
+            : []),
+          { type: "text", text: order.summary, size: "sm", wrap: true },
+          { type: "separator", margin: "md" },
+          {
+            type: "text",
+            text: `💰 รวม: ${order.total}.-`,
+            weight: "bold",
+            size: "md",
+            color: "#E85D3A",
+            margin: "md",
+          },
+        ],
+        paddingAll: "15px",
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        contents: [
+          {
+            type: "button",
+            style: "primary",
+            color: "#27AE60",
+            action: {
+              type: "postback",
+              label: "✅ ยืนยันการชำระเงิน",
+              data: `a=admin_confirm&oid=${orderId}`,
+              displayText: `ยืนยัน #${orderId}`,
+            },
+          },
+          {
+            type: "button",
+            style: "secondary",
+            action: {
+              type: "postback",
+              label: "❌ ปฏิเสธ",
+              data: `a=admin_reject&oid=${orderId}`,
+              displayText: `ปฏิเสธ #${orderId}`,
+            },
+          },
+        ],
+        paddingAll: "15px",
+      },
+    },
+  };
+}
+
+// คืน true ถ้าแจ้งสำเร็จ
+async function notifyAdminSlip(orderId, order) {
+  if (!ADMIN_ID) {
+    console.error("WARNING: No ADMIN_USER_ID configured — slip notification skipped");
+    return false;
+  }
+  try {
+    await client.pushMessage({ to: ADMIN_ID, messages: [adminSlipFlex(orderId, order)] });
+    return true;
+  } catch (err) {
+    console.error("Admin slip notify error:", err.message);
+    return false;
+  }
 }
 
 // ==================== Image Handler (รับสลิป) ====================
@@ -379,8 +778,12 @@ async function handleImage(replyToken, userId, messageId) {
   }
 
   const order = pendingOrders.get(session.orderId);
-  if (!order) return;
+  if (!order || order.state !== "await_slip") return; // กันประมวลผลซ้ำ
   const orderId = session.orderId;
+
+  // จองสถานะก่อน (sync) กันรับสลิปซ้ำซ้อนตอนคนเยอะ
+  order.state = "slip_sent";
+  session.state = "await_confirm";
 
   try {
     const stream = await blobClient.getMessageContent(messageId);
@@ -388,15 +791,9 @@ async function handleImage(replyToken, userId, messageId) {
     for await (const chunk of stream) chunks.push(chunk);
     const buffer = Buffer.concat(chunks);
 
-    const slipDir = path.join(__dirname, "images", "slips");
-    if (!fs.existsSync(slipDir)) fs.mkdirSync(slipDir, { recursive: true });
-    const slipFile = `${orderId}.jpg`;
-    fs.writeFileSync(path.join(slipDir, slipFile), buffer);
-
-    const slipUrl = `${BASE_URL}/images/slips/${slipFile}`;
-    order.slipUrl = slipUrl;
-    order.state = "slip_sent";
-    session.state = "await_confirm";
+    // ย่อ+บีบอัด+เขียนแบบ async (ไม่บล็อก event loop)
+    const slipFile = await saveSlipImage(buffer, orderId, order.slipToken);
+    order.slipUrl = `${BASE_URL}/images/slips/${slipFile}`;
 
     await reply(replyToken, [
       {
@@ -405,91 +802,20 @@ async function handleImage(replyToken, userId, messageId) {
       },
     ]);
 
-    if (ADMIN_ID) {
+    const ok = await notifyAdminSlip(orderId, order);
+    if (!ok) {
       await client.pushMessage({
-        to: ADMIN_ID,
+        to: userId,
         messages: [
-          {
-            type: "flex",
-            altText: `💳 สลิป #${orderId} - รวม ${order.total}.-`,
-            contents: {
-              type: "bubble",
-              header: {
-                type: "box",
-                layout: "vertical",
-                contents: [
-                  {
-                    type: "text",
-                    text: `💳 สลิป #${orderId}`,
-                    weight: "bold",
-                    size: "lg",
-                    color: "#E85D3A",
-                  },
-                ],
-                backgroundColor: "#FFF8E7",
-                paddingAll: "15px",
-              },
-              hero: {
-                type: "image",
-                url: slipUrl,
-                size: "full",
-                aspectRatio: "1:1.4",
-                aspectMode: "fit",
-              },
-              body: {
-                type: "box",
-                layout: "vertical",
-                spacing: "sm",
-                contents: [
-                  { type: "text", text: order.summary, size: "sm", wrap: true },
-                  { type: "separator", margin: "md" },
-                  {
-                    type: "text",
-                    text: `💰 รวม: ${order.total}.-`,
-                    weight: "bold",
-                    size: "md",
-                    color: "#E85D3A",
-                    margin: "md",
-                  },
-                ],
-                paddingAll: "15px",
-              },
-              footer: {
-                type: "box",
-                layout: "vertical",
-                spacing: "sm",
-                contents: [
-                  {
-                    type: "button",
-                    style: "primary",
-                    color: "#27AE60",
-                    action: {
-                      type: "postback",
-                      label: "✅ ยืนยันการชำระเงิน",
-                      data: `a=admin_confirm&oid=${orderId}`,
-                      displayText: `ยืนยัน #${orderId}`,
-                    },
-                  },
-                  {
-                    type: "button",
-                    style: "secondary",
-                    action: {
-                      type: "postback",
-                      label: "❌ ปฏิเสธ",
-                      data: `a=admin_reject&oid=${orderId}`,
-                      displayText: `ปฏิเสธ #${orderId}`,
-                    },
-                  },
-                ],
-                paddingAll: "15px",
-              },
-            },
-          },
+          { type: "text", text: "⚠️ ระบบแจ้งร้านค้าไม่สำเร็จ กรุณาติดต่อร้านค้าโดยตรงครับ" },
         ],
-      });
+      }).catch(() => {});
     }
   } catch (err) {
     console.error("Slip error:", err.message);
+    // คืนสถานะให้ลูกค้าส่งสลิปใหม่ได้
+    order.state = "await_slip";
+    session.state = "await_slip";
     return reply(replyToken, [
       { type: "text", text: "❌ เกิดข้อผิดพลาด กรุณาส่งสลิปอีกครั้งครับ" },
     ]);
@@ -506,20 +832,21 @@ async function handlePostback(replyToken, userId, data) {
     const oid = params.get("oid");
     const session = getSession(userId);
 
-    if (oid && pendingOrders.has(oid)) {
-      const order = pendingOrders.get(oid);
-      if (order.state === "confirmed") {
-        return reply(replyToken, [
-          { type: "text", text: `⚠️ ออเดอร์ #${oid} ยืนยันแล้ว ไม่สามารถยกเลิกได้` },
-        ]);
-      }
-      pendingOrders.delete(oid);
-      if (session.orderId === oid) {
-        session.state = "idle";
-        session.orderId = null;
-      }
-    } else {
-      if (session.orderId) pendingOrders.delete(session.orderId);
+    if (!oid || !pendingOrders.has(oid)) {
+      return reply(replyToken, [
+        { type: "text", text: `⚠️ ออเดอร์ #${oid || "-"} ถูกยกเลิกไปแล้ว` },
+      ]);
+    }
+
+    const order = pendingOrders.get(oid);
+    if (order.state === "confirmed") {
+      return reply(replyToken, [
+        { type: "text", text: `⚠️ ออเดอร์ #${oid} ยืนยันแล้ว ไม่สามารถยกเลิกได้` },
+      ]);
+    }
+
+    pendingOrders.delete(oid);
+    if (session.orderId === oid) {
       session.state = "idle";
       session.orderId = null;
     }
@@ -530,12 +857,18 @@ async function handlePostback(replyToken, userId, data) {
   }
 
   if (action === "admin_confirm") {
+    if (userId !== ADMIN_ID) {
+      return reply(replyToken, [{ type: "text", text: "⚠️ เฉพาะแอดมินเท่านั้น" }]);
+    }
+
     const orderId = params.get("oid");
     const order = pendingOrders.get(orderId);
     if (!order)
       return reply(replyToken, [{ type: "text", text: `❌ ไม่พบออเดอร์ #${orderId}` }]);
     if (order.state === "confirmed")
       return reply(replyToken, [{ type: "text", text: `⚠️ ออเดอร์ #${orderId} ยืนยันไปแล้ว` }]);
+    if (order.state !== "slip_sent")
+      return reply(replyToken, [{ type: "text", text: `⏳ ออเดอร์ #${orderId} ยังไม่มีสลิป — รอลูกค้าส่งก่อนครับ` }]);
 
     const cs = getSession(order.userId);
     cs.state = "idle";
@@ -543,16 +876,18 @@ async function handlePostback(replyToken, userId, data) {
     order.state = "confirmed";
 
     const now = new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" });
+    const dInfo = deliveryText(order);
+    const dPart = dInfo ? `\n${dInfo}` : "";
 
-    await client.pushMessage({
+    client.pushMessage({
       to: order.userId,
       messages: [
         {
           type: "text",
-          text: `✅ ชำระเงินเรียบร้อยแล้ว!\n\n📋 ออเดอร์ #${orderId}\n${order.summary}\n💰 รวม: ${order.total}.-\n\nกำลังเตรียมอาหารให้นะครับ 🍱`,
+          text: `✅ ชำระเงินเรียบร้อยแล้ว!\n\n📋 ออเดอร์ #${orderId}${dPart}\n${order.summary}\n💰 รวม: ${order.total}.-\n\nกำลังเตรียมอาหารให้นะครับ 🍱`,
         },
       ],
-    });
+    }).catch(err => console.error("Notify customer (confirm) error:", err.message));
 
     return reply(replyToken, [
       {
@@ -574,7 +909,7 @@ async function handlePostback(replyToken, userId, data) {
               },
               {
                 type: "text",
-                text: `📋 #${orderId}\n${order.summary}\n💰 รวม: ${order.total}.-`,
+                text: `📋 #${orderId}${dPart}\n${order.summary}\n💰 รวม: ${order.total}.-`,
                 size: "sm",
                 color: "#888888",
                 wrap: true,
@@ -605,19 +940,22 @@ async function handlePostback(replyToken, userId, data) {
   }
 
   if (action === "admin_reject") {
+    if (userId !== ADMIN_ID) {
+      return reply(replyToken, [{ type: "text", text: "⚠️ เฉพาะแอดมินเท่านั้น" }]);
+    }
+
     const orderId = params.get("oid");
     const order = pendingOrders.get(orderId);
     if (!order)
       return reply(replyToken, [{ type: "text", text: `❌ ออเดอร์ #${orderId} ถูกจัดการไปแล้ว` }]);
 
-    const wasConfirmed = order.state === "confirmed";
     const cs = getSession(order.userId);
-    pendingOrders.delete(orderId);
 
-    if (wasConfirmed) {
+    if (order.state === "confirmed") {
+      pendingOrders.delete(orderId);
       cs.state = "idle";
       cs.orderId = null;
-      await client.pushMessage({
+      client.pushMessage({
         to: order.userId,
         messages: [
           {
@@ -625,15 +963,22 @@ async function handlePostback(replyToken, userId, data) {
             text: `❌ ออเดอร์ #${orderId} ถูกยกเลิกแล้ว\nกรุณาติดต่อเจ้าหน้าที่เรื่องการคืนเงินครับ`,
           },
         ],
-      });
+      }).catch(err => console.error("Notify customer (cancel-after-confirm) error:", err.message));
       return reply(replyToken, [
         { type: "text", text: `❌ ยกเลิก #${orderId} (หลังยืนยัน) — แจ้งลูกค้าแล้ว` },
       ]);
     }
 
+    if (order.state !== "slip_sent") {
+      return reply(replyToken, [
+        { type: "text", text: `⚠️ ออเดอร์ #${orderId} ปฏิเสธไปแล้ว หรือยังไม่มีสลิป` },
+      ]);
+    }
+
+    order.state = "await_slip";
     cs.state = "await_slip";
 
-    await client.pushMessage({
+    client.pushMessage({
       to: order.userId,
       messages: [
         {
@@ -641,7 +986,7 @@ async function handlePostback(replyToken, userId, data) {
           text: `❌ สลิป #${orderId} ยังไม่ผ่าน\nกรุณาโอนเงิน ${order.total} บาท แล้วส่งสลิปใหม่ครับ`,
         },
       ],
-    });
+    }).catch(err => console.error("Notify customer (reject) error:", err.message));
 
     return reply(replyToken, [
       { type: "text", text: `❌ ปฏิเสธ #${orderId} — แจ้งลูกค้าแล้ว` },

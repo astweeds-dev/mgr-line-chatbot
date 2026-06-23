@@ -3,239 +3,1140 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MGR สั่งอาหาร</title>
+<title>Merry Go Round Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;color:#333;padding-bottom:80px}
-.header{position:sticky;top:0;z-index:10;background:#E85D3A;color:#fff;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,.15)}
-.header h1{font-size:20px;font-weight:700}
-.header .badge{background:#fff;color:#E85D3A;border-radius:20px;padding:2px 10px;font-size:13px;font-weight:700}
-.menu-item{background:#fff;margin:8px 12px;border-radius:12px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.06);transition:box-shadow .2s}
-.menu-item.has-qty{box-shadow:0 0 0 2px #E85D3A,0 2px 8px rgba(232,93,58,.15)}
-.item-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
-.item-name{font-size:15px;font-weight:600;flex:1}
-.qty-ctrl{display:flex;align-items:center;gap:0;border-radius:8px;overflow:hidden;border:1.5px solid #e0e0e0;flex-shrink:0}
-.qty-btn{width:36px;height:36px;border:none;font-size:20px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s}
-.qty-btn.minus{background:#f5f5f5;color:#999}
-.qty-btn.plus{background:#E85D3A;color:#fff}
-.qty-btn:active{opacity:.7}
-.qty-btn:disabled{opacity:.3}
-.qty-val{width:32px;text-align:center;font-size:16px;font-weight:700;background:#fff}
-.qty-val.active{color:#E85D3A}
-.item-bottom{display:flex;align-items:center;justify-content:space-between;margin-top:8px;gap:8px}
-.price-tag{font-size:14px;color:#888;font-weight:500}
-.meat-toggle{display:flex;gap:0;border-radius:8px;overflow:hidden;border:1.5px solid #e0e0e0}
-.meat-btn{border:none;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;background:#f9f9f9;color:#888}
-.meat-btn.active-pork{background:#E85D3A;color:#fff}
-.meat-btn.active-beef{background:#8B4513;color:#fff}
-.meat-btn:active{opacity:.7}
-.summary-item{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px}
-.summary-item:last-child{border-bottom:none}
-.summary-item .s-name{flex:1}
-.summary-item .s-qty{color:#888;margin:0 12px}
-.summary-item .s-price{font-weight:600;white-space:nowrap}
-.addons-section{background:#fff;margin:8px 12px;border-radius:12px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-.addons-section h3{font-size:15px;font-weight:700;margin-bottom:12px;color:#333}
-.addon-row{display:flex;align-items:center;padding:10px 0;border-bottom:1px solid #f5f5f5;cursor:pointer;-webkit-tap-highlight-color:transparent}
-.addon-row:last-child{border-bottom:none}
-.addon-check{width:24px;height:24px;border-radius:6px;border:2px solid #ddd;margin-right:12px;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
-.addon-check.checked{background:#27AE60;border-color:#27AE60}
-.addon-check.checked::after{content:"\2713";color:#fff;font-size:14px;font-weight:700}
-.addon-label{font-size:15px}
-.summary-card{background:#fff;margin:8px 12px;border-radius:12px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-.total-row{display:flex;justify-content:space-between;padding-top:12px;margin-top:8px;border-top:2px solid #E85D3A;font-size:18px;font-weight:700}
-.total-row .t-price{color:#E85D3A}
-.bottom-bar{position:fixed;bottom:0;left:0;right:0;background:#fff;padding:12px 16px;box-shadow:0 -2px 10px rgba(0,0,0,.1);display:flex;align-items:center;gap:10px;z-index:20}
-.bottom-total{flex:1}
-.bottom-total .label{font-size:12px;color:#888}
-.bottom-total .amount{font-size:20px;font-weight:700;color:#E85D3A}
-.btn{border:none;border-radius:10px;padding:14px 24px;font-size:16px;font-weight:700;cursor:pointer;transition:all .15s;text-align:center}
-.btn:active{transform:scale(.97)}
-.btn-primary{background:#E85D3A;color:#fff;flex:1}
-.btn-primary:disabled{background:#ccc;color:#fff}
-.btn-confirm{background:#27AE60;color:#fff;flex:1}
-.btn-secondary{background:#f0f0f0;color:#555;padding:14px 20px}
-.view{display:none}
+body{font-family:'Sarabun',sans-serif;background:#FFFEF5;color:#333;-webkit-tap-highlight-color:transparent}
+button{font-family:'Sarabun',sans-serif;cursor:pointer;border:none;outline:none}
+
+.view{display:none;padding-bottom:90px}
 .view.active{display:block}
-.overlay{position:fixed;inset:0;background:rgba(255,255,255,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100}
-.overlay .spinner{width:40px;height:40px;border:4px solid #f0f0f0;border-top-color:#E85D3A;border-radius:50%;animation:spin .6s linear infinite}
-.overlay p{margin-top:12px;font-size:15px;color:#888;text-align:center;padding:0 20px}
-.overlay .success-icon{font-size:60px;margin-bottom:8px}
+
+/* ===== HERO ===== */
+.hero{background:linear-gradient(135deg,#FFF9C4 0%,#FFFEF5 100%);text-align:center;padding:24px 20px 18px}
+.hero-logo{width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid #F9E84A;box-shadow:0 2px 12px rgba(249,232,74,.35)}
+.hero-name{font-size:18px;font-weight:800;color:#5A4F00;margin-top:8px;letter-spacing:-.3px}
+.hero-badge{display:inline-block;background:#F9E84A;color:#5A4F00;font-size:12px;font-weight:700;padding:3px 12px;border-radius:20px;margin-top:6px}
+.hero-sub{font-size:12px;color:#8a7f33;font-weight:600;margin-top:6px;letter-spacing:.3px}
+
+/* ===== START FORM (จุดจัดส่ง + ข้อมูลลูกค้า) ===== */
+.start-form{padding:18px 16px 8px}
+.sf-section{margin-bottom:20px}
+.sf-label{font-size:15px;font-weight:700;color:#5A4F00;margin-bottom:10px}
+.loc-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.loc-btn{display:flex;align-items:center;gap:8px;padding:14px 12px;border-radius:12px;font-size:14px;font-weight:600;background:#fff;color:#555;border:1.5px solid #e8e4cc;text-align:left;transition:all .15s}
+.loc-btn .loc-no{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#f0ecd4;color:#8a7f33;font-size:12px;font-weight:700;flex:0 0 auto}
+.loc-btn.active{background:#FFFBE0;border-color:#F9E84A;color:#5A4F00}
+.loc-btn.active .loc-no{background:#F9E84A;color:#5A4F00}
+.sf-input{width:100%;padding:14px;border-radius:12px;border:1.5px solid #e8e4cc;font-size:15px;font-family:inherit;background:#fff;box-sizing:border-box}
+.sf-input:focus{outline:none;border-color:#F9E84A}
+.start-bar{position:sticky;bottom:0;padding:16px;background:#FFFEF5;border-top:1px solid #f0ecd4}
+.btn-confirm:disabled{opacity:.45;cursor:not-allowed}
+.delivery-bar{padding:10px 16px;background:#FFFBE0;color:#5A4F00;font-size:13px;font-weight:600;border-bottom:1px solid #f0ecd4;cursor:pointer}
+.note-input{width:100%;margin-top:6px;padding:12px;border-radius:12px;border:1.5px solid #e8e4cc;font-size:14px;font-family:inherit;background:#fff;box-sizing:border-box;resize:vertical}
+.note-input:focus{outline:none;border-color:#F9E84A}
+.lang-btn{position:fixed;top:12px;right:12px;z-index:120;background:#5A4F00;color:#F9E84A;font-size:13px;font-weight:800;padding:6px 14px;border-radius:18px;box-shadow:0 2px 8px rgba(0,0,0,.18);letter-spacing:.5px}
+.lang-btn:active{transform:scale(.95)}
+
+/* ===== CATEGORY TABS ===== */
+.cat-tabs{position:sticky;top:0;z-index:5;display:flex;gap:8px;padding:10px 16px;background:#FFFEF5;overflow-x:auto;-webkit-overflow-scrolling:touch;border-bottom:1px solid #f0ecd4}
+.cat-tabs::-webkit-scrollbar{display:none}
+.cat-tab{flex:0 0 auto;padding:8px 18px;border-radius:20px;font-size:14px;font-weight:700;background:#fff;color:#999;border:1.5px solid #e8e4cc;white-space:nowrap;transition:all .15s}
+.cat-tab.active{background:#F9E84A;color:#5A4F00;border-color:#F9E84A}
+.menu-empty{text-align:center;color:#aaa;font-size:14px;padding:48px 16px}
+
+/* ===== MENU LIST ===== */
+.menu-section{padding:8px 16px}
+.menu-card{background:#fff;border-radius:14px;padding:14px 16px;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.04);border:1.5px solid transparent;transition:all .15s;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.menu-card:active{transform:scale(.98)}
+.mc-info{flex:1}
+.mc-name{font-size:15px;font-weight:700;color:#333}
+.mc-price{font-size:13px;color:#888;margin-top:2px}
+.mc-badge{background:#F9E84A;color:#5A4F00;min-width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0}
+
+/* ===== ITEM DETAIL ===== */
+.detail-header{display:flex;align-items:center;gap:12px;padding:16px 20px;background:linear-gradient(135deg,#FFF9C4 0%,#FFFEF5 100%);position:sticky;top:0;z-index:10}
+.detail-close{background:none;font-size:20px;color:#333;padding:4px;width:36px;height:36px;display:flex;align-items:center;justify-content:center}
+.detail-name{font-size:16px;font-weight:800;color:#5A4F00;flex:1}
+
+.option-section{padding:16px 20px;border-bottom:1px solid #f0edd4}
+.option-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px}
+.option-title{font-size:15px;font-weight:800;color:#333}
+.option-badge{font-size:11px;font-weight:700;color:#888;background:#f0edd4;padding:2px 10px;border-radius:10px}
+.option-badge.req{color:#E74C3C;background:#FDEAEA}
+.option-sub{font-size:12px;color:#999;margin-bottom:10px}
+
+.option-item{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #f8f5e6}
+.option-item:last-child{border-bottom:none}
+.opt-check{width:22px;height:22px;border-radius:5px;border:2px solid #ddd;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;font-size:13px;color:transparent}
+.opt-check.on{border-color:#27AE60;background:#27AE60;color:#fff}
+.opt-radio{width:22px;height:22px;border-radius:50%;border:2px solid #ddd;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s}
+.opt-radio::after{content:'';width:12px;height:12px;border-radius:50%;background:transparent;transition:all .15s}
+.opt-radio.on{border-color:#27AE60}
+.opt-radio.on::after{background:#27AE60}
+.opt-label{flex:1;font-size:14px;color:#333}
+.opt-price{font-size:14px;color:#888;font-weight:600}
+
+.detail-bar{position:fixed;bottom:0;left:0;right:0;background:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 -2px 12px rgba(0,0,0,.08);z-index:20}
+.d-qty{display:flex;align-items:center;gap:0;border-radius:10px;overflow:hidden;border:1.5px solid #e8e4cc}
+.d-qty button{width:42px;height:44px;font-size:20px;font-weight:700;display:flex;align-items:center;justify-content:center;background:#FFFEF5;color:#aaa;transition:all .1s}
+.d-qty button:active{opacity:.6}
+.d-qty button:last-child{background:#f0edd4;color:#5A4F00}
+.d-qty span{width:36px;text-align:center;font-size:16px;font-weight:800;background:#fff;color:#333}
+.btn-add{flex:1;display:flex;justify-content:space-between;align-items:center;padding:13px 20px;border-radius:10px;font-size:16px;font-weight:800;background:#27AE60;color:#fff;transition:all .1s}
+.btn-add:active{transform:scale(.97)}
+
+/* ===== CART BAR ===== */
+.cart-bar{position:fixed;bottom:0;left:0;right:0;background:#F9E84A;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;z-index:20;box-shadow:0 -2px 12px rgba(0,0,0,.08);transform:translateY(100%);transition:transform .25s ease}
+.cart-bar.show{transform:translateY(0)}
+.cart-info{display:flex;align-items:center;gap:10px}
+.cart-badge{background:#5A4F00;color:#F9E84A;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800}
+.cart-text .ct-label{font-size:12px;color:#5A4F00;font-weight:600}
+.cart-text .ct-total{font-size:18px;font-weight:800;color:#5A4F00}
+.cart-btn{background:#5A4F00;color:#F9E84A;padding:10px 22px;border-radius:10px;font-size:15px;font-weight:700;transition:all .1s}
+.cart-btn:active{transform:scale(.96)}
+
+/* ===== CART VIEW ===== */
+.cart-header{background:linear-gradient(135deg,#FFF9C4 0%,#FFFEF5 100%);padding:16px 20px;display:flex;align-items:center;gap:12px}
+.cart-back{background:none;font-size:22px;color:#5A4F00;padding:4px}
+.cart-title{font-size:18px;font-weight:800;color:#5A4F00}
+.cart-list{padding:12px 16px}
+.cart-item{background:#fff;border-radius:12px;padding:14px 16px;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.ci-top{display:flex;align-items:flex-start;gap:12px}
+.ci-info{flex:1}
+.ci-name{font-size:14px;font-weight:700;color:#333}
+.ci-desc{font-size:12px;color:#999;margin-top:2px}
+.ci-price{font-size:15px;font-weight:700;color:#5A4F00;white-space:nowrap;padding-top:1px}
+.ci-bottom{display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid #f8f5e6}
+.ci-actions{display:flex;align-items:center;gap:16px}
+.ci-edit{background:none;font-size:12px;color:#5A4F00;font-weight:700;padding:4px 0}
+.ci-remove{background:none;font-size:12px;color:#E74C3C;font-weight:600;padding:4px 0}
+.ci-qty{display:flex;align-items:center;gap:0;border-radius:8px;overflow:hidden;border:1.5px solid #e8e4cc}
+.ci-qty button{width:30px;height:30px;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.ci-qty .cq-m{background:#FFFEF5;color:#aaa}
+.ci-qty .cq-p{background:#F9E84A;color:#5A4F00}
+.ci-qty span{width:26px;text-align:center;font-size:14px;font-weight:700;background:#fff}
+
+.extras-section{background:#fff;margin:8px 16px;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.extras-title{font-size:15px;font-weight:700;color:#333;margin-bottom:12px}
+.extras-pills{display:flex;flex-wrap:wrap;gap:8px}
+.extra-pill{padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;background:#FFFEF5;color:#999;border:1.5px solid #e8e4cc;transition:all .15s}
+.extra-pill.active{background:#F9E84A;color:#5A4F00;border-color:#F9E84A}
+
+.cart-summary{background:#FFF9C4;margin:12px 16px;border-radius:12px;padding:16px}
+.cs-row{display:flex;justify-content:space-between;align-items:center}
+.cs-label{font-size:14px;color:#5A4F00;font-weight:600}
+.cs-total{font-size:22px;font-weight:800;color:#5A4F00}
+.cart-confirm-bar{position:fixed;bottom:0;left:0;right:0;padding:12px 16px;background:#FFFEF5;box-shadow:0 -2px 10px rgba(0,0,0,.06);z-index:20}
+.btn-confirm{width:100%;padding:14px;border-radius:12px;font-size:16px;font-weight:800;background:#27AE60;color:#fff;transition:all .1s}
+.btn-confirm:active{transform:scale(.97)}
+
+/* ===== PAYMENT ===== */
+.progress-bar{display:flex;align-items:center;justify-content:center;gap:0;padding:20px 20px 16px}
+.step{display:flex;flex-direction:column;align-items:center;flex:1}
+.step-dot{width:28px;height:28px;border-radius:50%;background:#e8e4cc;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;transition:all .2s;position:relative;z-index:1}
+.step-dot.done{background:#27AE60}
+.step-dot.current{background:#F9E84A;color:#5A4F00}
+.step-label{font-size:11px;color:#bbb;margin-top:4px;font-weight:600}
+.step-label.active{color:#5A4F00}
+.step-line{flex:1;height:3px;background:#e8e4cc;margin:0 -4px;position:relative;top:-10px;z-index:0}
+.step-line.done{background:#27AE60}
+
+.payment-card{background:#fff;margin:0 16px 12px;border-radius:14px;padding:20px;box-shadow:0 1px 6px rgba(0,0,0,.05);text-align:center}
+.payment-card h3{font-size:16px;font-weight:800;color:#5A4F00;margin-bottom:12px}
+.payment-qr{width:200px;height:200px;object-fit:contain;border-radius:10px;border:2px solid #F9E84A}
+.payment-amount{font-size:28px;font-weight:800;color:#5A4F00;margin:12px 0 4px}
+.payment-amount span{font-size:16px;font-weight:600}
+.payment-hint{font-size:14px;color:#888;margin-top:8px;line-height:1.6}
+.payment-hint b{color:#27AE60}
+
+.payment-order-summary{background:#FFF9C4;margin:0 16px 12px;border-radius:12px;padding:14px 16px}
+.pos-title{font-size:13px;font-weight:700;color:#5A4F00;margin-bottom:8px}
+.pos-deliver{font-size:12px;font-weight:600;color:#8a7f33;background:#FFFBE0;border-radius:8px;padding:6px 10px;margin-bottom:8px}
+.pos-item{display:flex;justify-content:space-between;font-size:13px;color:#5A4F00;padding:3px 0}
+.pos-total{display:flex;justify-content:space-between;font-size:15px;font-weight:800;color:#5A4F00;border-top:1.5px dashed #e8d97a;margin-top:8px;padding-top:8px}
+
+.slip-attach{padding:4px 16px 0}
+.btn-more{display:block;width:calc(100% - 32px);margin:10px auto 0;padding:13px;border-radius:12px;font-size:15px;font-weight:800;background:#F9E84A;color:#5A4F00;transition:all .1s}
+.btn-more:active{transform:scale(.97)}
+.btn-edit{display:block;width:calc(100% - 32px);margin:10px auto 0;padding:13px;border-radius:12px;font-size:15px;font-weight:700;background:#fff;color:#5A4F00;border:1.5px solid #e8e4cc;transition:all .1s}
+.btn-edit:active{transform:scale(.97)}
+.btn-cancel{display:block;margin:8px auto 20px;background:none;color:#ccc;font-size:13px;font-weight:600;padding:8px 16px}
+
+/* ===== SUCCESS ===== */
+.view.active.success-view{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px 20px;text-align:center;background:linear-gradient(180deg,#FFFEF5 0%,#FFF9C4 100%)}
+.success-logo{width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid #27AE60;box-shadow:0 2px 12px rgba(39,174,96,.2)}
+.success-check{font-size:48px;margin:12px 0 4px}
+.success-title{font-size:20px;font-weight:800;color:#27AE60}
+.success-oid{font-size:14px;color:#5A4F00;background:#FFF9C4;padding:4px 16px;border-radius:20px;margin-top:8px;font-weight:700;display:inline-block}
+.success-summary{background:#fff;border-radius:12px;padding:16px;margin-top:16px;width:100%;max-width:360px;box-shadow:0 1px 6px rgba(0,0,0,.05);text-align:left}
+.ss-item{display:flex;justify-content:space-between;font-size:13px;color:#555;padding:4px 0}
+.ss-total{display:flex;justify-content:space-between;font-size:15px;font-weight:800;color:#5A4F00;border-top:1.5px dashed #e8d97a;margin-top:8px;padding-top:8px}
+.success-eta{margin-top:16px;font-size:15px;color:#5A4F00;font-weight:600}
+.success-note{margin-top:6px;font-size:13px;color:#aaa}
+
+/* ===== OVERLAY + TOAST ===== */
+.overlay{position:fixed;inset:0;background:rgba(255,254,245,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;display:none}
+.overlay.show{display:flex}
+.spinner{width:36px;height:36px;border:4px solid #e8e4cc;border-top-color:#F9E84A;border-radius:50%;animation:spin .6s linear infinite}
+.overlay p{margin-top:12px;font-size:14px;color:#999}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+.empty-cart{text-align:center;padding:60px 20px}
+.empty-cart .ec-icon{font-size:48px;margin-bottom:8px}
+.empty-cart p{font-size:14px;color:#ccc;font-weight:600}
+
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-100px);background:#ff4444;color:#fff;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:600;z-index:200;transition:transform .3s ease;white-space:nowrap}
+.toast.show{transform:translateX(-50%) translateY(0)}
 </style>
 </head>
 <body>
 
-<div id="view-menu" class="view active">
-  <div class="header">
-    <h1>🍱 เมนูอาหาร</h1>
-    <span class="badge" id="item-count">0 รายการ</span>
+<!-- ปุ่มสลับภาษา TH/EN (ลอยมุมขวาบน) -->
+<button class="lang-btn" onclick="toggleLang()">EN</button>
+
+<!-- ==================== VIEW: START (จุดจัดส่ง + ข้อมูลลูกค้า) ==================== -->
+<div id="v-start" class="view active">
+  <div class="hero">
+    <img src="/images/mgr%20logo.jpg" alt="MGR" class="hero-logo">
+    <div class="hero-name">Merry Go Round Studio</div>
+    <span class="hero-badge" data-i18n="tagline">สั่งอาหารและเครื่องดื่ม</span>
   </div>
-  <div id="menu-list"></div>
-  <div class="bottom-bar">
-    <div class="bottom-total">
-      <div class="label">รวมทั้งหมด</div>
-      <div class="amount" id="menu-total">0.-</div>
+  <div class="start-form">
+    <div class="sf-section">
+      <div class="sf-label" data-i18n="deliverTo">📍 จัดส่งที่</div>
+      <div class="loc-grid" id="loc-grid"></div>
     </div>
-    <button class="btn btn-primary" id="btn-to-summary" disabled onclick="goToSummary()">สั่งอาหาร</button>
+    <div class="sf-section">
+      <div class="sf-label" data-i18n="yourName">👤 ชื่อผู้สั่ง</div>
+      <input class="sf-input" id="in-name" type="text" placeholder="ชื่อของคุณ" data-i18n-ph="namePh" maxlength="40" oninput="onStartInput()">
+    </div>
+    <div class="sf-section">
+      <div class="sf-label" data-i18n="yourPhone">📞 เบอร์โทร</div>
+      <input class="sf-input" id="in-phone" type="tel" inputmode="numeric" placeholder="08X-XXX-XXXX" data-i18n-ph="phonePh" maxlength="15" oninput="onStartInput()">
+    </div>
+  </div>
+  <div class="start-bar">
+    <button class="btn-confirm" id="btn-start" onclick="startOrdering()" data-i18n="startOrdering" disabled>เริ่มสั่งอาหาร &rarr;</button>
   </div>
 </div>
 
-<div id="view-summary" class="view">
-  <div class="header" style="background:#27AE60">
-    <h1>🧾 สรุปออเดอร์</h1>
+<!-- ==================== VIEW: MENU ==================== -->
+<div id="v-menu" class="view">
+  <div class="hero">
+    <img src="/images/mgr%20logo.jpg" alt="MGR" class="hero-logo">
+    <div class="hero-name">Merry Go Round Studio</div>
+    <span class="hero-badge" data-i18n="tagline">สั่งอาหารและเครื่องดื่ม</span>
   </div>
-  <div class="summary-card">
-    <div id="summary-list"></div>
-    <div class="total-row">
-      <span>รวมทั้งหมด</span>
-      <span class="t-price" id="summary-total">0.-</span>
+  <div class="delivery-bar" id="delivery-bar" onclick="editDelivery()"></div>
+  <div class="cat-tabs" id="cat-tabs"></div>
+  <div class="menu-section" id="menu-list"></div>
+  <div class="cart-bar" id="cart-bar" onclick="goCart()">
+    <div class="cart-info">
+      <div class="cart-badge" id="cart-count">0</div>
+      <div class="cart-text">
+        <div class="ct-label" data-i18n="yourCart">ตะกร้าของคุณ</div>
+        <div class="ct-total" id="cart-total">0.-</div>
+      </div>
     </div>
-  </div>
-  <div class="addons-section">
-    <h3>🛒 สิ่งที่ต้องการเพิ่ม</h3>
-    <div class="addon-row" onclick="toggleAddon('spoon')">
-      <div class="addon-check" id="chk-spoon"></div>
-      <span class="addon-label">ช้อนส้อม</span>
-    </div>
-    <div class="addon-row" onclick="toggleAddon('chili')">
-      <div class="addon-check" id="chk-chili"></div>
-      <span class="addon-label">พริกน้ำปลา</span>
-    </div>
-    <div class="addon-row" onclick="toggleAddon('sauce')">
-      <div class="addon-check" id="chk-sauce"></div>
-      <span class="addon-label">ซอส</span>
-    </div>
-  </div>
-  <div class="bottom-bar">
-    <button class="btn btn-secondary" onclick="goToMenu()">แก้ไข</button>
-    <button class="btn btn-confirm" onclick="submitOrder()">✅ ยืนยันออเดอร์</button>
+    <button class="cart-btn" data-i18n="viewOrder">ดูออเดอร์ &rarr;</button>
   </div>
 </div>
 
-<div id="overlay-submit" class="overlay" style="display:none">
+<!-- ==================== VIEW: ITEM DETAIL ==================== -->
+<div id="v-detail" class="view">
+  <div class="detail-header">
+    <button class="detail-close" onclick="closeDetail()">&#10005;</button>
+    <div class="detail-name" id="detail-name"></div>
+  </div>
+  <div id="detail-options"></div>
+  <div class="detail-bar">
+    <div class="d-qty">
+      <button onclick="dQty(-1)">&minus;</button>
+      <span id="d-qty">1</span>
+      <button onclick="dQty(1)">+</button>
+    </div>
+    <button class="btn-add" onclick="addToCart()">
+      <span id="d-add-label">ใส่ตะกร้า</span>
+      <span id="d-total">&#3647;0</span>
+    </button>
+  </div>
+</div>
+
+<!-- ==================== VIEW: CART ==================== -->
+<div id="v-cart" class="view">
+  <div class="cart-header">
+    <button class="cart-back" onclick="goMenu()">&larr;</button>
+    <div class="cart-title" data-i18n="yourOrder">ออเดอร์ของคุณ</div>
+  </div>
+  <div id="cart-items" class="cart-list"></div>
+  <button class="btn-more" onclick="goMenu()" data-i18n="orderMore">🍱 สั่งออเดอร์เพิ่มเติม</button>
+  <div class="extras-section">
+    <div class="extras-title" data-i18n="extras">เพิ่มเติม</div>
+    <div class="extras-pills" id="extras-pills"></div>
+  </div>
+  <div class="cart-summary">
+    <div class="cs-row">
+      <span class="cs-label" data-i18n="total">รวมทั้งหมด</span>
+      <span class="cs-total" id="cart-total2">0.-</span>
+    </div>
+  </div>
+  <div class="cart-confirm-bar">
+    <button class="btn-confirm" onclick="submitOrder()" data-i18n="confirmPay">ยืนยันและชำระเงิน</button>
+  </div>
+</div>
+
+<!-- ==================== VIEW: PAYMENT ==================== -->
+<div id="v-payment" class="view">
+  <div class="progress-bar" id="progress-bar"></div>
+  <div class="payment-card">
+    <h3 data-i18n="scanPromptPay">สแกนจ่ายผ่าน PromptPay</h3>
+    <img src="/images/qr-payment.jpg" alt="QR" class="payment-qr">
+    <div class="payment-amount" id="pay-amount">0 <span>บาท</span></div>
+    <p class="payment-hint" data-i18n-html="payHint"><b>โอนเสร็จแล้ว</b><br>แนบสลิปด้านล่าง หรือถ่ายส่งในแชท LINE</p>
+  </div>
+  <div class="payment-order-summary" id="pay-summary"></div>
+  <div class="slip-attach">
+    <input type="file" id="slip-input" accept="image/*" hidden onchange="onSlipPicked(event)">
+    <button class="btn-confirm" onclick="pickSlip()" data-i18n="attachSlip">📎 แนบสลิปการโอนเงิน</button>
+  </div>
+  <button class="btn-more" onclick="addMoreItems()" data-i18n="orderMore">🍱 สั่งออเดอร์เพิ่มเติม</button>
+  <button class="btn-edit" onclick="editOrder()" data-i18n="editOrderBtn">✏️ แก้ไขออเดอร์</button>
+  <button class="btn-cancel" id="btn-cancel-order" onclick="cancelOrder()" data-i18n="cancelOrderBtn">ยกเลิกออเดอร์</button>
+</div>
+
+<!-- ==================== VIEW: SUCCESS ==================== -->
+<div id="v-success" class="view success-view">
+  <img src="/images/mgr%20logo.jpg" alt="MGR" class="success-logo">
+  <div class="success-check">&#10003;</div>
+  <div class="success-title" data-i18n="slipSent">ส่งสลิปเรียบร้อย!</div>
+  <div class="success-oid" id="s-oid"></div>
+  <div class="success-summary" id="s-summary"></div>
+  <div class="success-eta" data-i18n="waitConfirm">รอร้านค้ายืนยันการชำระเงิน</div>
+  <div class="success-note" data-i18n="checkLine">ดูสถานะต่อได้ในแชท LINE ครับ 🙏</div>
+</div>
+
+<!-- ==================== OVERLAY ==================== -->
+<div class="overlay" id="overlay-loading">
   <div class="spinner"></div>
-  <p>กำลังส่งออเดอร์...</p>
+  <p data-i18n="sending">กำลังส่งออเดอร์...</p>
 </div>
 
-<div id="overlay-done" class="overlay" style="display:none">
-  <div class="success-icon">✅</div>
-  <p id="done-msg">ส่งออเดอร์เรียบร้อย!<br>กลับไปที่ LINE เพื่อดู QR Code ชำระเงินครับ</p>
-</div>
+<!-- ==================== TOAST ==================== -->
+<div class="toast" id="toast"></div>
 
 <script>
-const MENU=[
-  {id:15,name:"ไข่เจียว",pork:50,beef:null},
-  {id:1,name:"ไข่เจียวหมูสับ",pork:60,beef:null},
-  {id:2,name:"ผัดกะเพรา",pork:70,beef:80},
-  {id:3,name:"น้ำมันหอย",pork:70,beef:80},
-  {id:4,name:"เต้าเจี้ยวผัดโหระพา",pork:70,beef:80},
-  {id:5,name:"ผัดพริกเผา",pork:70,beef:80},
-  {id:6,name:"ผัดพริกแกง",pork:70,beef:80},
-  {id:7,name:"กระเทียมพริกไทย",pork:70,beef:80},
-  {id:8,name:"พะแนง",pork:80,beef:90},
-  {id:9,name:"ผัดพริกแกงใต้",pork:80,beef:90},
-  {id:10,name:"ผัดพริกเกลือ",pork:80,beef:90},
-  {id:11,name:"ผัดไข่เค็ม",pork:90,beef:100},
-  {id:12,name:"เขียวหวานผัดแห้ง",pork:90,beef:100},
-  {id:13,name:"หมูสับไข่ระเบิด",pork:90,beef:null},
-  {id:14,name:"ผัดผงกะหรี่",pork:90,beef:100}
+// ==================== i18n: ภาษา ====================
+// ค่าภายใน (เนื้อสัตว์/แอดออน/จุดจัดส่ง/ระดับ) เก็บเป็น "ไทย" เสมอ เพื่อใช้เป็นคีย์ส่ง server
+// ส่วนที่แสดงผลใช้ L()/disp() เพื่อสลับภาษา
+let lang = (function () { try { return localStorage.getItem("lang") || "th"; } catch (e) { return "th"; } })();
+function L(x) { return x && typeof x === "object" ? (x[lang] || x.th || x.en) : x; }     // ค่าเป็น string หรือ {th,en}
+function disp(map, v) { return (map[v] && map[v][lang]) || v; }                            // ค่าไทย → แสดงตามภาษา
+
+// หมวดเมนู — ลำดับนี้คือลำดับที่แสดงบนแท็บ
+const CATS = [
+  { id: "food",   label: { th: "อาหารตามสั่ง", en: "Fast Food" },   prefix: { th: "ข้าวราด", en: "Rice with " } },
+  { id: "coffee", label: { th: "กาแฟ", en: "Coffee" },             prefix: "" },
+  { id: "milk",   label: { th: "นม & ชา", en: "Milk & Tea" },       prefix: "" },
+  { id: "soda",   label: { th: "โซดาอิตาเลียน", en: "Italian Soda" }, prefix: "" },
 ];
 
-const qty={}, meat={}, addons=new Set();
+// add-on (id = คีย์ราคาไทย ตรงกับ server / ข้อความแสดงดูจาก ADDON_LABELS)
+const COFFEE_ADDONS = [
+  { id: "น้ำผึ้ง", price: 10 }, { id: "คาราเมลไซรัป", price: 10 },
+  { id: "นมโอ๊ต", price: 20 }, { id: "เพิ่มช็อต", price: 20 },
+];
+const MILK_ADDONS = [{ id: "น้ำผึ้ง", price: 10 }, { id: "คาราเมลไซรัป", price: 10 }];
+
+// ตัวเลือก "ระดับ" (เลือก 1) — หวาน/เผ็ด (ค่าไทย, แสดงผ่าน LEVEL_LABELS)
+const SWEETNESS = ["ไม่หวาน", "หวานปกติ", "หวานมาก"];
+const SPICINESS = ["เผ็ดน้อย", "เผ็ดปกติ", "เผ็ดมาก"];
+
+const MENU = [
+  { id: 1,  cat: "food", name: { th: "ไข่เจียว", en: "Thai Omelette" },        price: { default: 50 }, addons: [{ id: "หมูสับ", price: 10 }, { id: "พิเศษ", price: 20 }], allowNote: true },
+  { id: 3,  cat: "food", name: { th: "ผัดกะเพรา", en: "Stir-fried Basil" },     price: { หมู: 70, เนื้อ: 80 }, level: SPICINESS, levelLabel: "ระดับความเผ็ด", allowNote: true },
+  { id: 4,  cat: "food", name: { th: "ผัดน้ำมันหอย", en: "Stir-fried Oyster Sauce" }, price: { หมู: 70, เนื้อ: 80 }, level: SPICINESS, levelLabel: "ระดับความเผ็ด", allowNote: true },
+  { id: 5,  cat: "food", name: { th: "ผัดเต้าเจี้ยว", en: "Stir-fried Bean Paste" }, price: { หมู: 70, เนื้อ: 80 }, level: SPICINESS, levelLabel: "ระดับความเผ็ด", allowNote: true },
+  { id: 6,  cat: "food", name: { th: "ผัดพริกเผา", en: "Stir-fried Roasted Chili Paste" }, price: { หมู: 70, เนื้อ: 80 }, level: SPICINESS, levelLabel: "ระดับความเผ็ด", allowNote: true },
+  { id: 7,  cat: "food", name: { th: "ผัดพริกแกง", en: "Stir-fried Curry Paste" }, price: { หมู: 70, เนื้อ: 80 }, level: SPICINESS, levelLabel: "ระดับความเผ็ด", allowNote: true },
+  { id: 8,  cat: "food", name: { th: "ผัดกระเทียม", en: "Stir-fried Garlic" },  price: { หมู: 70, เนื้อ: 80 }, level: SPICINESS, levelLabel: "ระดับความเผ็ด", allowNote: true },
+  { id: 9,  cat: "food", name: { th: "พะแนง", en: "Panang Curry" },           price: { หมู: 80, เนื้อ: 90 }, level: SPICINESS, levelLabel: "ระดับความเผ็ด", allowNote: true },
+  { id: 10, cat: "food", name: { th: "พริกแกงใต้", en: "Southern Curry" },     price: { หมู: 80, เนื้อ: 90 }, level: SPICINESS, levelLabel: "ระดับความเผ็ด", allowNote: true },
+  { id: 11, cat: "food", name: { th: "พริกเกลือ", en: "Salt Chili Stir-fry" }, price: { หมู: 80, เนื้อ: 90 }, level: SPICINESS, levelLabel: "ระดับความเผ็ด", allowNote: true },
+  { id: 12, cat: "food", name: { th: "ผัดไข่เค็ม", en: "Stir-fried Salted Egg" }, price: { หมู: 90, เนื้อ: 100 }, level: SPICINESS, levelLabel: "ระดับความเผ็ด", allowNote: true },
+  { id: 13, cat: "food", name: { th: "เขียวหวาน", en: "Green Curry" },         price: { หมู: 90, เนื้อ: 100 }, level: SPICINESS, levelLabel: "ระดับความเผ็ด", allowNote: true },
+  { id: 14, cat: "food", name: { th: "หมูสับไข่ระเบิด", en: "Minced Pork & Runny Egg" }, price: { default: 90 }, level: SPICINESS, levelLabel: "ระดับความเผ็ด", allowNote: true },
+  { id: 15, cat: "food", name: { th: "ผัดผงกะหรี่", en: "Stir-fried Curry Powder" }, price: { หมู: 90, เนื้อ: 100 }, level: SPICINESS, levelLabel: "ระดับความเผ็ด", allowNote: true },
+
+  // ☕ กาแฟ — เลือกเมล็ด + add-on + ความหวาน + โน้ต
+  { id: 20, cat: "coffee", name: { th: "เอสเปรสโซ", en: "Espresso" },          variantLabel: "เมล็ดกาแฟ", price: { "คั่วอ่อน": 70, "คั่วเข้ม": 70 }, addons: COFFEE_ADDONS, level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+  { id: 21, cat: "coffee", name: { th: "อเมริกาโน่", en: "Americano" },         variantLabel: "เมล็ดกาแฟ", price: { "คั่วอ่อน": 70, "คั่วเข้ม": 70 }, addons: COFFEE_ADDONS, level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+  { id: 22, cat: "coffee", name: { th: "คาปูชิโน่", en: "Cappuccino" },         variantLabel: "เมล็ดกาแฟ", price: { "คั่วอ่อน": 70, "คั่วเข้ม": 70 }, addons: COFFEE_ADDONS, level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+  { id: 23, cat: "coffee", name: { th: "ลาเต้", en: "Latte" },                 variantLabel: "เมล็ดกาแฟ", price: { "คั่วอ่อน": 70, "คั่วเข้ม": 70 }, addons: COFFEE_ADDONS, level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+  { id: 24, cat: "coffee", name: { th: "คาราเมล มัคคิอาโต", en: "Caramel Macchiato" }, variantLabel: "เมล็ดกาแฟ", price: { "คั่วอ่อน": 80, "คั่วเข้ม": 80 }, addons: COFFEE_ADDONS, level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+
+  // 🥛 นม
+  { id: 30, cat: "milk", name: { th: "นมสดเย็น", en: "Fresh Milk" },           price: { default: 70 }, addons: MILK_ADDONS, level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+  { id: 31, cat: "milk", name: { th: "นมชมพูเย็น", en: "Pink Milk" },          price: { default: 70 }, addons: MILK_ADDONS, level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+  { id: 32, cat: "milk", name: { th: "นมคาราเมลเย็น", en: "Caramel Milk" },     price: { default: 70 }, addons: MILK_ADDONS, level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+  { id: 33, cat: "milk", name: { th: "นมเฮเซลนัทเย็น", en: "Hazelnut Milk" },   price: { default: 70 }, addons: MILK_ADDONS, level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+  { id: 34, cat: "milk", name: { th: "ช็อกโกแลตบานาน่าเย็น", en: "Choco Banana" }, price: { default: 70 }, addons: MILK_ADDONS, level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+  { id: 35, cat: "milk", name: { th: "โกโก้", en: "Cocoa" },                   price: { default: 70 }, addons: MILK_ADDONS, level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+
+  // 🥤 Italian Soda
+  { id: 40, cat: "soda", name: "Watermelon",  price: { default: 70 }, addons: [], level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+  { id: 41, cat: "soda", name: "Pineapple",   price: { default: 70 }, addons: [], level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+  { id: 42, cat: "soda", name: "Kiwi",        price: { default: 70 }, addons: [], level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+  { id: 43, cat: "soda", name: "Melon",       price: { default: 70 }, addons: [], level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+  { id: 44, cat: "soda", name: "Honey Lemon", price: { default: 70 }, addons: [], level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+  { id: 45, cat: "soda", name: "Lychee",      price: { default: 70 }, addons: [], level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+  { id: 46, cat: "soda", name: "Kyoho Grape", price: { default: 70 }, addons: [], level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+  { id: 47, cat: "soda", name: "Banana",      price: { default: 70 }, addons: [], level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+  { id: 48, cat: "soda", name: "Cantaloupe",  price: { default: 70 }, addons: [], level: SWEETNESS, levelLabel: "ระดับความหวาน", allowNote: true },
+];
+
+const ADDONS = [
+  { id: "ไข่ดาว", price: 15 }, { id: "ไข่เจียว", price: 20 }, { id: "พิเศษ", price: 20 },
+];
+
+const EXTRAS = [
+  { id: "spoon", label: { th: "รับช้อนส้อม", en: "Spoon & Fork" } },
+  { id: "chili", label: { th: "พริกน้ำปลา", en: "Chili Fish Sauce" } },
+  { id: "sauce", label: { th: "ซอส", en: "Sauce" } },
+];
+
+// จุดจัดส่งในร้าน — ค่าไทย (ส่ง server) / แสดงผ่าน LOCATION_LABELS
+const LOCATIONS = ["ห้องซ้อมเล็ก", "ห้องซ้อมใหญ่", "ห้องสตูดิโอ", "ลานนั่งหน้ามินิบาร์"];
+
+// ===== ตารางแปลค่าไทย → แสดงสองภาษา =====
+const VARIANT_LABELS = {
+  "หมู": { th: "หมู", en: "Pork" }, "เนื้อ": { th: "เนื้อ", en: "Beef" },
+  "คั่วอ่อน": { th: "คั่วอ่อน", en: "Light roast" }, "คั่วเข้ม": { th: "คั่วเข้ม", en: "Dark roast" },
+};
+const LEVEL_LABELS = {
+  "ไม่หวาน": { th: "ไม่หวาน", en: "No sugar" }, "หวานปกติ": { th: "หวานปกติ", en: "Normal sweet" }, "หวานมาก": { th: "หวานมาก", en: "Extra sweet" },
+  "เผ็ดน้อย": { th: "เผ็ดน้อย", en: "Mild" }, "เผ็ดปกติ": { th: "เผ็ดปกติ", en: "Medium" }, "เผ็ดมาก": { th: "เผ็ดมาก", en: "Spicy" },
+};
+const ADDON_LABELS = {
+  "ไข่ดาว": { th: "ไข่ดาว", en: "Fried Egg" }, "ไข่เจียว": { th: "ไข่เจียว", en: "Omelette" },
+  "พิเศษ": { th: "พิเศษ", en: "Special" }, "หมูสับ": { th: "หมูสับ", en: "Minced Pork" },
+  "น้ำผึ้ง": { th: "น้ำผึ้ง", en: "Honey" }, "คาราเมลไซรัป": { th: "คาราเมลไซรัป", en: "Caramel Syrup" },
+  "นมโอ๊ต": { th: "นมโอ๊ต", en: "Oat Milk" }, "เพิ่มช็อต": { th: "เพิ่มช็อต", en: "Add 1 Shot" },
+};
+const LOCATION_LABELS = {
+  "ห้องซ้อมเล็ก": { th: "ห้องซ้อมเล็ก", en: "Small Rehearsal Room" },
+  "ห้องซ้อมใหญ่": { th: "ห้องซ้อมใหญ่", en: "Large Rehearsal Room" },
+  "ห้องสตูดิโอ": { th: "ห้องสตูดิโอ", en: "Studio Room" },
+  "ลานนั่งหน้ามินิบาร์": { th: "ลานนั่งหน้ามินิบาร์", en: "Mini-bar Front Seating" },
+};
+const VARIANT_TITLES = { "เมล็ดกาแฟ": { th: "เมล็ดกาแฟ", en: "Coffee bean" }, "เนื้อสัตว์": { th: "เนื้อสัตว์", en: "Meat" } };
+const LEVEL_TITLES = { "ระดับความเผ็ด": { th: "ระดับความเผ็ด", en: "Spice level" }, "ระดับความหวาน": { th: "ระดับความหวาน", en: "Sweetness" } };
+
+// ===== ข้อความ UI สองภาษา =====
+const I18N = {
+  th: {
+    tagline: "สั่งอาหารและเครื่องดื่ม", deliverTo: "📍 จัดส่งที่", yourName: "👤 ชื่อผู้สั่ง", yourPhone: "📞 เบอร์โทร",
+    namePh: "ชื่อของคุณ", phonePh: "08X-XXX-XXXX", startOrdering: "เริ่มสั่งอาหาร →",
+    yourCart: "ตะกร้าของคุณ", viewOrder: "ดูออเดอร์ →", yourOrder: "ออเดอร์ของคุณ", orderMore: "🍱 สั่งออเดอร์เพิ่มเติม",
+    extras: "เพิ่มเติม", total: "รวมทั้งหมด", confirmPay: "ยืนยันและชำระเงิน",
+    scanPromptPay: "สแกนจ่ายผ่าน PromptPay", payHint: "<b>โอนเสร็จแล้ว</b><br>แนบสลิปด้านล่าง หรือถ่ายส่งในแชท LINE",
+    attachSlip: "📎 แนบสลิปการโอนเงิน", editOrderBtn: "✏️ แก้ไขออเดอร์", cancelOrderBtn: "ยกเลิกออเดอร์",
+    slipSent: "ส่งสลิปเรียบร้อย!", waitConfirm: "รอร้านค้ายืนยันการชำระเงิน", checkLine: "ดูสถานะต่อได้ในแชท LINE ครับ 🙏",
+    sending: "กำลังส่งออเดอร์...", sendingSlip: "กำลังส่งสลิป...",
+    tapEdit: "(แตะเพื่อแก้ไข)", comingSoon: "เมนูหมวดนี้กำลังจะมาเร็วๆ นี้",
+    addToCart: "ใส่ตะกร้า", saveEdit: "บันทึกการแก้ไข", edit: "✏️ แก้ไข", remove: "ลบรายการ", emptyCart: "ยังไม่มีรายการในตะกร้า",
+    required: "ต้องระบุ", optional: "ไม่บังคับ", chooseOne: "กรุณาเลือก 1 ข้อ", chooseMany: "เลือกได้หลายข้อ",
+    chooseHint: "เลือกได้ค่ะ", addonsTitle: "กดเพิ่มได้ค่ะ", levelOptHint: "เลือกได้ 1 ข้อ (ถ้าไม่เลือก ร้านจะทำระดับปกติให้)",
+    noteTitle: "เพิ่มเติมถึงร้าน", noteHint: "พิมพ์สิ่งที่ต้องการ เช่น ไม่ใส่น้ำแข็ง / หวานน้อยพิเศษ", notePh: "พิมพ์ที่นี่ (ถ้ามี)",
+    order: "ออเดอร์", sumTotal: "รวม", baht: "บาท",
+    stepSelect: "เลือก", stepConfirm: "ยืนยัน", stepPay: "โอน", stepDone: "เสร็จ",
+    errStart: "กรุณาเลือกจุดจัดส่ง และกรอกชื่อ/เบอร์โทรให้ครบ", errImg: "กรุณาเลือกไฟล์รูปภาพ", errRead: "อ่านไฟล์ไม่สำเร็จ",
+  },
+  en: {
+    tagline: "Order Food & Drinks", deliverTo: "📍 Deliver to", yourName: "👤 Your name", yourPhone: "📞 Phone",
+    namePh: "Your name", phonePh: "08X-XXX-XXXX", startOrdering: "Start ordering →",
+    yourCart: "Your cart", viewOrder: "View order →", yourOrder: "Your order", orderMore: "🍱 Add more items",
+    extras: "Extras", total: "Total", confirmPay: "Confirm & Pay",
+    scanPromptPay: "Pay via PromptPay", payHint: "<b>Transferred?</b><br>Attach the slip below, or send it in LINE chat",
+    attachSlip: "📎 Attach payment slip", editOrderBtn: "✏️ Edit order", cancelOrderBtn: "Cancel order",
+    slipSent: "Slip sent!", waitConfirm: "Waiting for the shop to confirm payment", checkLine: "Track status in LINE chat 🙏",
+    sending: "Sending order...", sendingSlip: "Sending slip...",
+    tapEdit: "(tap to edit)", comingSoon: "Menu coming soon",
+    addToCart: "Add to cart", saveEdit: "Save changes", edit: "✏️ Edit", remove: "Remove", emptyCart: "Your cart is empty",
+    required: "Required", optional: "Optional", chooseOne: "Choose 1", chooseMany: "Choose any",
+    chooseHint: "optional", addonsTitle: "Add-ons", levelOptHint: "Choose 1 (default level if skipped)",
+    noteTitle: "Note to shop", noteHint: "e.g. no ice / less sweet", notePh: "Type here (optional)",
+    order: "Order", sumTotal: "Total", baht: "THB",
+    stepSelect: "Select", stepConfirm: "Confirm", stepPay: "Pay", stepDone: "Done",
+    errStart: "Please choose a delivery spot and fill in your name & phone", errImg: "Please choose an image file", errRead: "Failed to read file",
+  },
+};
+function t(k) { return (I18N[lang] && I18N[lang][k]) || I18N.th[k] || k; }
+
 const TOKEN = new URLSearchParams(location.search).get("t");
 
-function changeQty(id,d){
-  const n=Math.max(0,Math.min(99,(qty[id]||0)+d));
-  if(n===0) delete qty[id]; else{qty[id]=n;if(!meat[id])meat[id]="pork";}
-  renderMenu();
-}
-function setMeat(id,t){meat[id]=t;renderMenu();}
-function toggleAddon(id){
-  if(addons.has(id))addons.delete(id);else addons.add(id);
-  document.getElementById("chk-"+id).classList.toggle("checked",addons.has(id));
-}
-function getPrice(item){const m=meat[item.id]||"pork";return m==="beef"&&item.beef?item.beef:item.pork;}
-function getTotal(){let t=0;Object.entries(qty).forEach(([id,q])=>{const i=MENU.find(m=>m.id===+id);if(i)t+=getPrice(i)*q;});return t;}
-function getItemCount(){return Object.values(qty).reduce((s,q)=>s+q,0);}
+let delivery = { location: null, name: "", phone: "" };
+// ตะกร้า = array ของบรรทัดสินค้า (รองรับโน้ต/ความหวานต่อแก้ว) แต่ละบรรทัดมี uid
+// line = { uid, id, meat, addons:[], level, note, qty }  (level = หวาน/เผ็ด แล้วแต่เมนู)
+let cart = [];
+let cartUid = 0;
+let extras = new Set();
+let curCat = CATS[0].id;
+let curItem = null;
+let curMeat = null;
+let curAddons = new Set();
+let curLevel = null;
+let curNote = "";
+let curQty = 1;
+let editingUid = null;
+let lastOrderId = "";
+let lastSlipToken = "";
+let lastTotal = 0;
+let lastItems = [];
 
-function renderMenu(){
-  document.getElementById("menu-list").innerHTML=MENU.map(item=>{
-    const q=qty[item.id]||0,m=meat[item.id]||"pork",has=q>0;
-    let bot;
-    if(item.beef!==null){
-      bot=`<div class="meat-toggle">
-        <button class="meat-btn ${m==="pork"?"active-pork":""}" onclick="setMeat(${item.id},'pork')">หมู ${item.pork}.-</button>
-        <button class="meat-btn ${m==="beef"?"active-beef":""}" onclick="setMeat(${item.id},'beef')">เนื้อ ${item.beef}.-</button>
-      </div>`;
-    } else bot=`<span class="price-tag">${item.pork}.-</span>`;
-    return`<div class="menu-item ${has?"has-qty":""}">
-      <div class="item-top">
-        <span class="item-name">ข้าวราด ${item.name}</span>
-        <div class="qty-ctrl">
-          <button class="qty-btn minus" onclick="changeQty(${item.id},-1)" ${q===0?"disabled":""}>−</button>
-          <span class="qty-val ${has?"active":""}">${q}</span>
-          <button class="qty-btn plus" onclick="changeQty(${item.id},1)">+</button>
-        </div>
-      </div>
-      <div class="item-bottom">${bot}</div>
-    </div>`;
-  }).join("");
-  const t=getTotal(),c=getItemCount();
-  document.getElementById("menu-total").textContent=t+".-";
-  document.getElementById("item-count").textContent=c+" รายการ";
-  document.getElementById("btn-to-summary").disabled=c===0;
+// ==================== HELPERS ====================
+function catOf(id) { return CATS.find(c => c.id === id) || CATS[0]; }
+
+// ชื่อเมนูที่แสดง — เติม prefix ตามหมวด + สลับภาษา
+function dishName(item) { return L(catOf(item.cat).prefix) + L(item.name); }
+
+function hasMeat(item) { return !item.price.default; }
+
+function basePrice(item) {
+  return item.price.default || Math.min(...Object.values(item.price));
 }
 
-function getSelectedItems(){
-  return Object.entries(qty).map(([id,q])=>{
-    const item=MENU.find(m=>m.id===+id),m=meat[id]||"pork";
-    const ml=item.beef!==null?(m==="beef"?"เนื้อ":"หมู"):null;
-    const p=getPrice(item);
-    return{id:+id,name:ml?`ข้าวราด ${item.name} ${ml}`:`ข้าวราด ${item.name}`,meat:m,qty:q,unitPrice:p,totalPrice:p*q};
+function meats(item) {
+  if (!hasMeat(item)) return [];
+  const base = Math.min(...Object.values(item.price));
+  return Object.entries(item.price).map(([n, p]) => ({ name: n, extra: p - base }));
+}
+
+function makeKey(id, meat, addons) {
+  let k = `${id}`;
+  if (meat) k += `-${meat}`;
+  if (addons && addons.length) k += `:${[...addons].sort().join(",")}`;
+  return k;
+}
+
+function parseKey(key) {
+  let addons = [], rest = key;
+  if (key.includes(":")) {
+    const i = key.indexOf(":");
+    addons = key.slice(i + 1).split(",");
+    rest = key.slice(0, i);
+  }
+  let id, meat = null;
+  if (rest.includes("-")) {
+    const i = rest.indexOf("-");
+    id = +rest.slice(0, i);
+    meat = rest.slice(i + 1);
+  } else {
+    id = +rest;
+  }
+  return { id, meat, addons };
+}
+
+function unitPrice(item, meat, addons) {
+  let p = meat ? item.price[meat] : item.price.default;
+  const list = item.addons || ADDONS;
+  if (addons && addons.length) {
+    for (const aid of addons) { const a = list.find(x => x.id === aid); if (a) p += a.price; }
+  }
+  return p;
+}
+
+// ราคา/แก้ว ของบรรทัดในตะกร้า (ความหวาน/โน้ตไม่กระทบราคา)
+function linePrice(line) {
+  const item = MENU.find(m => m.id === line.id);
+  return item ? unitPrice(item, line.meat, line.addons) : 0;
+}
+
+function findLine(uid) { return cart.find(l => l.uid === uid); }
+
+function totalQty() { return cart.reduce((s, l) => s + l.qty, 0); }
+
+function totalPrice() { return cart.reduce((s, l) => s + linePrice(l) * l.qty, 0); }
+
+function qtyForItem(id) {
+  return cart.reduce((s, l) => s + (l.id === id ? l.qty : 0), 0);
+}
+
+// คำอธิบายตัวเลือกของบรรทัด (เมล็ด/แอดออน/หวาน/โน้ต) — ใช้ทั้งในตะกร้าและสรุปออเดอร์
+function lineDesc(line) {
+  const parts = [];
+  if (line.meat) parts.push(disp(VARIANT_LABELS, line.meat));
+  if (line.addons.length) parts.push(line.addons.map(a => disp(ADDON_LABELS, a)).join("+"));
+  if (line.level) parts.push(disp(LEVEL_LABELS, line.level));
+  let d = parts.join(" + ");
+  if (line.note) d += (d ? " · " : "") + `📝 ${line.note}`;
+  return d;
+}
+
+function getSelectedItems() {
+  return cart.map(line => {
+    const item = MENU.find(m => m.id === line.id);
+    const up = unitPrice(item, line.meat, line.addons);
+    const key = makeKey(line.id, line.meat, line.addons); // คีย์คิดราคาฝั่ง server
+    let name = dishName(item);
+    const desc = lineDesc(line);
+    if (desc) name += ` (${desc})`;
+    return { key, name, type: line.meat, qty: line.qty, unitPrice: up, totalPrice: up * line.qty, price: up * line.qty };
   });
 }
 
-function goToSummary(){
-  const items=getSelectedItems();
-  document.getElementById("summary-list").innerHTML=items.map(i=>
-    `<div class="summary-item"><span class="s-name">${i.name}</span><span class="s-qty">x${i.qty}</span><span class="s-price">${i.totalPrice}.-</span></div>`
+// ==================== START (จุดจัดส่ง + ข้อมูลลูกค้า) ====================
+function renderLocations() {
+  document.getElementById("loc-grid").innerHTML = LOCATIONS.map((loc, i) =>
+    `<button class="loc-btn ${delivery.location === loc ? 'active' : ''}" onclick="selectLocation(${i})">
+       <span class="loc-no">${i + 1}</span>${disp(LOCATION_LABELS, loc)}
+     </button>`
   ).join("");
-  document.getElementById("summary-total").textContent=getTotal()+".-";
-  document.getElementById("view-menu").classList.remove("active");
-  document.getElementById("view-summary").classList.add("active");
-  window.scrollTo(0,0);
 }
 
-function goToMenu(){
-  document.getElementById("view-summary").classList.remove("active");
-  document.getElementById("view-menu").classList.add("active");
-  window.scrollTo(0,0);
+function selectLocation(i) {
+  delivery.location = LOCATIONS[i];
+  renderLocations();
+  validateStart();
 }
 
-async function submitOrder(){
-  const items=getSelectedItems();
-  if(!items.length)return;
-  document.getElementById("overlay-submit").style.display="flex";
-  try{
-    const res=await fetch("/api/order",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({token:TOKEN,items,addons:[...addons],total:getTotal()})
-    });
-    const data=await res.json();
-    if(!res.ok)throw new Error(data.error||"Server error");
-    document.getElementById("overlay-submit").style.display="none";
-    document.getElementById("done-msg").innerHTML=
-      "ส่งออเดอร์ <b>#"+data.orderId+"</b> เรียบร้อย!<br>กลับไปที่ LINE เพื่อดู QR Code ชำระเงินครับ";
-    document.getElementById("overlay-done").style.display="flex";
-  }catch(e){
-    document.getElementById("overlay-submit").style.display="none";
-    alert("เกิดข้อผิดพลาด: "+e.message);
+function onStartInput() {
+  delivery.name = document.getElementById("in-name").value.trim();
+  delivery.phone = document.getElementById("in-phone").value.trim();
+  validateStart();
+}
+
+function phoneOk(p) {
+  const d = (p || "").replace(/\D/g, "");
+  return d.length >= 9 && d.length <= 10;
+}
+
+function startReady() {
+  return !!delivery.location && delivery.name.length >= 1 && phoneOk(delivery.phone);
+}
+
+function validateStart() {
+  document.getElementById("btn-start").disabled = !startReady();
+}
+
+function startOrdering() {
+  if (!startReady()) {
+    showToast(t("errStart"));
+    return;
+  }
+  renderMenu();
+  renderDeliveryBar();
+  showView("v-menu");
+}
+
+function renderDeliveryBar() {
+  const el = document.getElementById("delivery-bar");
+  if (el) el.innerHTML = `📍 ${disp(LOCATION_LABELS, delivery.location)} · ${escapeHtml(delivery.name)} · ${escapeHtml(delivery.phone)} <span style="opacity:.6">${t("tapEdit")}</span>`;
+}
+
+function editDelivery() {
+  showView("v-start");
+}
+
+// ==================== MENU ====================
+function selectCat(id) {
+  curCat = id;
+  renderMenu();
+}
+
+function renderCatTabs() {
+  document.getElementById("cat-tabs").innerHTML = CATS.map(c =>
+    `<button class="cat-tab ${c.id === curCat ? 'active' : ''}" onclick="selectCat('${c.id}')">${L(c.label)}</button>`
+  ).join("");
+}
+
+function renderMenu() {
+  renderCatTabs();
+  const items = MENU.filter(item => item.cat === curCat);
+  const listEl = document.getElementById("menu-list");
+  if (!items.length) {
+    listEl.innerHTML = `<div class="menu-empty">${t("comingSoon")}</div>`;
+  } else {
+    listEl.innerHTML = items.map(item => {
+      const q = qtyForItem(item.id);
+      let pText;
+      if (hasMeat(item)) {
+        const lo = Math.min(...Object.values(item.price));
+        const hi = Math.max(...Object.values(item.price));
+        pText = lo === hi ? `฿${lo}` : `฿${lo}–${hi}`;
+      } else {
+        pText = `฿${item.price.default}`;
+      }
+      return `<div class="menu-card" onclick="openItem(${item.id})">
+        <div class="mc-info">
+          <div class="mc-name">${dishName(item)}</div>
+          <div class="mc-price">${pText}</div>
+        </div>
+        ${q > 0 ? `<div class="mc-badge">${q}</div>` : ''}
+      </div>`;
+    }).join("");
+  }
+  renderCartBar();
+}
+
+function renderCartBar() {
+  const q = totalQty();
+  document.getElementById("cart-bar").classList.toggle("show", q > 0);
+  document.getElementById("cart-count").textContent = q;
+  document.getElementById("cart-total").textContent = totalPrice() + ".-";
+}
+
+// ==================== ITEM DETAIL ====================
+function openItem(id) {
+  editingUid = null;
+  curItem = MENU.find(m => m.id === id);
+  curMeat = hasMeat(curItem) ? Object.keys(curItem.price)[0] : null;
+  curAddons = new Set();
+  // ระดับ (หวาน/เผ็ด) ไม่บังคับ — เริ่มต้นไม่เลือก
+  curLevel = null;
+  curNote = "";
+  curQty = 1;
+  showView("v-detail");
+  renderDetail();
+}
+
+// แก้ไขรายการในตะกร้า — เปิดหน้ารายละเอียดพร้อมค่าที่เลือกไว้เดิม
+function editCartItem(uid) {
+  const line = findLine(uid);
+  if (!line) return;
+  editingUid = uid;
+  curItem = MENU.find(m => m.id === line.id);
+  curMeat = line.meat;
+  curAddons = new Set(line.addons);
+  curLevel = line.level || null;
+  curNote = line.note || "";
+  curQty = line.qty;
+  showView("v-detail");
+  renderDetail();
+}
+
+function closeDetail() {
+  if (editingUid) { editingUid = null; goCart(); return; }
+  showView("v-menu");
+  renderMenu();
+}
+
+function renderDetail() {
+  const item = curItem;
+  const vtitle = disp(VARIANT_TITLES, item.variantLabel || "เนื้อสัตว์");
+  const subtitle = hasMeat(item) ? ` (${vtitle})` : "";
+  document.getElementById("detail-name").textContent = `${dishName(item)}${subtitle}`;
+
+  let html = "";
+
+  // 1) เลือกเมล็ด/เนื้อสัตว์ (เลือก 1 — บังคับ)
+  if (hasMeat(item)) {
+    const ms = meats(item);
+    html += `<div class="option-section">
+      <div class="option-header">
+        <span class="option-title">${vtitle}</span>
+        <span class="option-badge req">${t("required")}</span>
+      </div>
+      <div class="option-sub">${t("chooseOne")}</div>
+      ${ms.map(m => `<div class="option-item" onclick="pickMeat('${m.name}')">
+        <div class="opt-radio ${curMeat === m.name ? 'on' : ''}"></div>
+        <span class="opt-label">${disp(VARIANT_LABELS, m.name)}</span>
+        <span class="opt-price">${m.extra > 0 ? '+&#3647;' + m.extra : ''}</span>
+      </div>`).join("")}
+    </div>`;
+  }
+
+  // 2) ระดับ หวาน/เผ็ด (ไม่บังคับ)
+  if (item.level && item.level.length) {
+    html += `<div class="option-section">
+      <div class="option-header">
+        <span class="option-title">${disp(LEVEL_TITLES, item.levelLabel || "")}</span>
+        <span class="option-badge">${t("optional")}</span>
+      </div>
+      <div class="option-sub">${t("levelOptHint")}</div>
+      ${item.level.map(s => `<div class="option-item" onclick="pickLevel('${s}')">
+        <div class="opt-radio ${curLevel === s ? 'on' : ''}"></div>
+        <span class="opt-label">${disp(LEVEL_LABELS, s)}</span>
+      </div>`).join("")}
+    </div>`;
+  }
+
+  // 3) add-on (เลือกได้หลายข้อ)
+  const addonList = item.addons || ADDONS;
+  if (addonList.length) {
+    html += `<div class="option-section">
+      <div class="option-header">
+        <span class="option-title">${t("addonsTitle")}</span>
+      </div>
+      <div class="option-sub">${t("chooseMany")}</div>
+      ${addonList.map(a => `<div class="option-item" onclick="pickAddon('${a.id}')">
+        <div class="opt-check ${curAddons.has(a.id) ? 'on' : ''}">&#10003;</div>
+        <span class="opt-label">${disp(ADDON_LABELS, a.id)}</span>
+        <span class="opt-price">+&#3647;${a.price}</span>
+      </div>`).join("")}
+    </div>`;
+  }
+
+  // 4) โน้ตพิมพ์เอง
+  if (item.allowNote) {
+    html += `<div class="option-section">
+      <div class="option-header">
+        <span class="option-title">${t("noteTitle")}</span>
+      </div>
+      <div class="option-sub">${t("noteHint")}</div>
+      <textarea class="note-input" id="note-input" rows="2" maxlength="120" placeholder="${t("notePh")}" oninput="onNoteInput()">${escapeHtml(curNote)}</textarea>
+    </div>`;
+  }
+
+  document.getElementById("detail-options").innerHTML = html;
+  updateDetailBar();
+}
+
+function pickAddon(id) {
+  if (curAddons.has(id)) curAddons.delete(id); else curAddons.add(id);
+  renderDetail();
+}
+
+function pickMeat(name) {
+  curMeat = name;
+  renderDetail();
+}
+
+function pickLevel(s) {
+  curLevel = (curLevel === s) ? null : s; // แตะซ้ำเพื่อยกเลิกการเลือก
+  renderDetail();
+}
+
+// อัปเดตโน้ตโดยไม่ re-render (กันโฟกัสหลุดจากช่องพิมพ์)
+function onNoteInput() {
+  const el = document.getElementById("note-input");
+  if (el) curNote = el.value;
+}
+
+function dQty(d) {
+  curQty = Math.max(1, curQty + d);
+  updateDetailBar();
+}
+
+function updateDetailBar() {
+  const t = unitPrice(curItem, curMeat, [...curAddons]) * curQty;
+  document.getElementById("d-qty").textContent = curQty;
+  document.getElementById("d-total").innerHTML = `&#3647;${t}`;
+  document.getElementById("d-add-label").textContent = editingUid ? t("saveEdit") : t("addToCart");
+}
+
+// บรรทัดสองรายการเหมือนกันทุกตัวเลือกไหม (ใช้รวม qty)
+function sameConfig(line, id, meat, addons, level, note) {
+  if (line.id !== id) return false;
+  if ((line.meat || null) !== (meat || null)) return false;
+  if ((line.level || null) !== (level || null)) return false;
+  if ((line.note || "") !== (note || "")) return false;
+  return [...line.addons].sort().join(",") === [...addons].sort().join(",");
+}
+
+function addToCart() {
+  const note = (curNote || "").trim();
+  const addons = [...curAddons];
+  if (editingUid) {
+    const line = findLine(editingUid);
+    if (line) {
+      line.meat = curMeat; line.addons = addons; line.level = curLevel; line.note = note; line.qty = curQty;
+    }
+    editingUid = null;
+    goCart();
+  } else {
+    const match = cart.find(l => sameConfig(l, curItem.id, curMeat, addons, curLevel, note));
+    if (match) match.qty += curQty;
+    else cart.push({ uid: ++cartUid, id: curItem.id, meat: curMeat, addons, level: curLevel, note, qty: curQty });
+    closeDetail();
   }
 }
 
-renderMenu();
+// ==================== CART ====================
+function goCart() {
+  if (totalQty() === 0) return;
+  showView("v-cart");
+  renderCart();
+}
+
+function goMenu() {
+  showView("v-menu");
+  renderMenu();
+}
+
+function renderCart() {
+  const el = document.getElementById("cart-items");
+
+  if (!cart.length) {
+    el.innerHTML = `<div class="empty-cart"><div class="ec-icon">&#128722;</div><p>${t("emptyCart")}</p></div>`;
+  } else {
+    el.innerHTML = cart.map(line => {
+      const item = MENU.find(m => m.id === line.id);
+      const desc = lineDesc(line);
+      const price = linePrice(line) * line.qty;
+      return `<div class="cart-item">
+        <div class="ci-top">
+          <div class="ci-info">
+            <div class="ci-name">${dishName(item)}</div>
+            ${desc ? `<div class="ci-desc">${escapeHtml(desc)}</div>` : ''}
+          </div>
+          <div class="ci-price">${price}.-</div>
+        </div>
+        <div class="ci-bottom">
+          <div class="ci-actions">
+            <button class="ci-edit" onclick="editCartItem(${line.uid})">${t("edit")}</button>
+            <button class="ci-remove" onclick="removeItem(${line.uid})">${t("remove")}</button>
+          </div>
+          <div class="ci-qty">
+            <button class="cq-m" onclick="cQty(${line.uid},-1)">-</button>
+            <span>${line.qty}</span>
+            <button class="cq-p" onclick="cQty(${line.uid},1)">+</button>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  document.getElementById("extras-pills").innerHTML = EXTRAS.map(e =>
+    `<button class="extra-pill ${extras.has(e.id) ? 'active' : ''}" onclick="toggleExtra('${e.id}')">${L(e.label)}</button>`
+  ).join("");
+
+  document.getElementById("cart-total2").textContent = totalPrice() + ".-";
+}
+
+function cQty(uid, d) {
+  const line = findLine(uid);
+  if (!line) return;
+  line.qty = Math.max(1, line.qty + d);
+  renderCart();
+}
+
+function removeItem(uid) {
+  cart = cart.filter(l => l.uid !== uid);
+  if (totalQty() === 0) { goMenu(); return; }
+  renderCart();
+}
+
+function toggleExtra(id) {
+  if (extras.has(id)) extras.delete(id); else extras.add(id);
+  renderCart();
+}
+
+// ==================== SUBMIT ====================
+async function submitOrder() {
+  const items = getSelectedItems();
+  if (!items.length) return;
+
+  const ov = document.getElementById("overlay-loading");
+  ov.querySelector("p").textContent = t("sending");
+  ov.classList.add("show");
+  try {
+    const body = { token: TOKEN, items, addons: [...extras], total: totalPrice(), delivery };
+    const res = await fetch("/api/order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Server error");
+
+    document.getElementById("overlay-loading").classList.remove("show");
+    lastOrderId = data.orderId;
+    lastSlipToken = data.slipToken;
+    lastTotal = totalPrice();
+    lastItems = getSelectedItems();
+    goPayment();
+  } catch (e) {
+    document.getElementById("overlay-loading").classList.remove("show");
+    showToast(e.message);
+  }
+}
+
+// ==================== PAYMENT ====================
+// รายการสรุป — ถ้าตะกร้ายังมีของ ใช้ของจริง (สลับภาษาได้) ไม่งั้นใช้ค่าที่บันทึกไว้ (โหมด resume)
+function summaryItems() { return cart.length ? getSelectedItems() : lastItems; }
+
+function deliverLine() {
+  if (!delivery.location) return "";
+  return `<div class="pos-deliver">📍 ${disp(LOCATION_LABELS, delivery.location)} · ${escapeHtml(delivery.name)} · ${escapeHtml(delivery.phone)}</div>`;
+}
+
+function goPayment() {
+  showView("v-payment");
+  renderProgress(2);
+  document.getElementById("pay-amount").innerHTML = `${lastTotal} <span>${t("baht")}</span>`;
+
+  let html = `<div class="pos-title">${t("order")} #${lastOrderId}</div>`;
+  html += deliverLine();
+  html += summaryItems().map(it => `<div class="pos-item"><span>${escapeHtml(it.name)} x${it.qty}</span><span>${it.price}.-</span></div>`).join("");
+  html += `<div class="pos-total"><span>${t("sumTotal")}</span><span>${lastTotal}.-</span></div>`;
+  document.getElementById("pay-summary").innerHTML = html;
+}
+
+function renderProgress(step) {
+  const steps = [t("stepSelect"), t("stepConfirm"), t("stepPay"), t("stepDone")];
+  let html = "";
+  steps.forEach((s, i) => {
+    const done = i < step;
+    const cur = i === step;
+    html += `<div class="step">
+      <div class="step-dot ${done ? 'done' : ''} ${cur ? 'current' : ''}">${done ? '&#10003;' : i + 1}</div>
+      <div class="step-label ${done || cur ? 'active' : ''}">${s}</div>
+    </div>`;
+    if (i < steps.length - 1) html += `<div class="step-line ${i < step ? 'done' : ''}"></div>`;
+  });
+  document.getElementById("progress-bar").innerHTML = html;
+}
+
+function cancelOrder() {
+  cart = [];
+  extras.clear();
+  goMenu();
+}
+
+// กลับไปแก้ไขรายการ — กด "ยืนยันและชำระเงิน" อีกครั้งจะสร้างออเดอร์ใหม่
+// (server จะลบออเดอร์เดิมที่ยังไม่จ่ายให้อัตโนมัติ)
+function editOrder() {
+  goCart();
+}
+
+// สั่งเพิ่ม — กลับไปหน้าเมนู (รายการเดิมยังอยู่ในตะกร้า) แล้วยืนยันใหม่
+function addMoreItems() {
+  goMenu();
+}
+
+// ==================== แนบสลิป ====================
+function pickSlip() {
+  document.getElementById("slip-input").click();
+}
+
+function onSlipPicked(e) {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  if (!file.type.startsWith("image/")) { showToast(t("errImg")); return; }
+  const reader = new FileReader();
+  reader.onload = () => uploadSlip(reader.result);
+  reader.onerror = () => showToast(t("errRead"));
+  reader.readAsDataURL(file);
+}
+
+async function uploadSlip(dataUrl) {
+  const overlay = document.getElementById("overlay-loading");
+  overlay.querySelector("p").textContent = t("sendingSlip");
+  overlay.classList.add("show");
+  try {
+    const res = await fetch("/api/slip", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId: lastOrderId, slipToken: lastSlipToken, image: dataUrl })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "ส่งสลิปไม่สำเร็จ");
+    overlay.classList.remove("show");
+    goSuccess();
+  } catch (e) {
+    overlay.classList.remove("show");
+    showToast(e.message);
+  }
+}
+
+// ==================== SUCCESS ====================
+function goSuccess() {
+  showView("v-success");
+  document.getElementById("s-oid").textContent = `#${lastOrderId}`;
+  let html = deliverLine();
+  html += summaryItems().map(it => `<div class="ss-item"><span>${escapeHtml(it.name)} x${it.qty}</span><span>${it.price}.-</span></div>`).join("");
+  html += `<div class="ss-total"><span>${t("sumTotal")}</span><span>${lastTotal}.-</span></div>`;
+  document.getElementById("s-summary").innerHTML = html;
+}
+
+// ==================== RESUME (เปิดหน้าออเดอร์เดิม) ====================
+async function resumeOrder(oid, s) {
+  try {
+    const r = await fetch(`/api/order-status?oid=${encodeURIComponent(oid)}&s=${encodeURIComponent(s)}`);
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "ไม่พบออเดอร์");
+    lastOrderId = oid;
+    lastSlipToken = s;
+    lastTotal = d.total;
+    lastItems = d.items || [];
+    if (d.state === "await_slip") {
+      goPayment();
+      // โหมด resume: ซ่อนปุ่มแก้ไข/สั่งเพิ่ม (ตะกร้าฝั่งเว็บว่างแล้ว)
+      document.querySelector("#v-payment .btn-edit").style.display = "none";
+      document.querySelector("#v-payment .btn-more").style.display = "none";
+    } else {
+      // ส่งสลิปแล้ว/ยืนยันแล้ว → แสดงหน้าสถานะ
+      goSuccess();
+    }
+  } catch (e) {
+    renderMenu();
+    showToast(e.message);
+  }
+}
+
+// ==================== UTILS ====================
+function escapeHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function showView(id) {
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+  window.scrollTo(0, 0);
+}
+
+function showToast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  setTimeout(() => el.classList.remove("show"), 3000);
+}
+
+// ==================== i18n: ใส่ข้อความ static + ปุ่มสลับภาษา ====================
+function applyStaticText() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.getAttribute("data-i18n")); });
+  document.querySelectorAll("[data-i18n-html]").forEach(el => { el.innerHTML = t(el.getAttribute("data-i18n-html")); });
+  document.querySelectorAll("[data-i18n-ph]").forEach(el => { el.placeholder = t(el.getAttribute("data-i18n-ph")); });
+}
+
+function updateLangBtn() {
+  document.querySelectorAll(".lang-btn").forEach(b => { b.textContent = lang === "th" ? "EN" : "ไทย"; });
+}
+
+function setLang(l) {
+  lang = l;
+  try { localStorage.setItem("lang", l); } catch (e) {}
+  updateLangBtn();
+  applyStaticText();
+  // re-render เนื้อหา dynamic ของทุก view (ราคาถูกอยู่แล้ว แค่เปลี่ยนข้อความ)
+  renderLocations();
+  renderDeliveryBar();
+  if (document.getElementById("v-menu").classList.contains("active")) renderMenu();
+  if (document.getElementById("v-detail").classList.contains("active") && curItem) renderDetail();
+  if (document.getElementById("v-cart").classList.contains("active")) renderCart();
+  if (document.getElementById("v-payment").classList.contains("active")) goPayment();
+  if (document.getElementById("v-success").classList.contains("active")) goSuccess();
+}
+
+function toggleLang() { setLang(lang === "th" ? "en" : "th"); }
+
+// ==================== INIT ====================
+updateLangBtn();
+applyStaticText();
+const resumeOid = new URLSearchParams(location.search).get("oid");
+const resumeS = new URLSearchParams(location.search).get("s");
+if (resumeOid && resumeS) {
+  resumeOrder(resumeOid, resumeS);
+} else {
+  renderLocations();   // หน้าแรก = เลือกจุดจัดส่ง + กรอกชื่อ/เบอร์ (v-start active อยู่แล้ว)
+}
 </script>
 </body>
 </html>

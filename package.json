@@ -5,7 +5,8 @@
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
-    "dev": "nodemon app.js",
+    "dev": "set NODE_ENV=development && nodemon app.js",
+    "dev:tunnel": "start-dev.bat",
     "create-rich-menu": "node create-rich-menu.js"
   },
   "dependencies": {
@@ -15,6 +16,7 @@
     "sharp": "^0.35.2"
   },
   "devDependencies": {
-    "nodemon": "^3.1.9"
+    "nodemon": "^3.1.9",
+    "puppeteer": "^25.1.0"
   }
 }
