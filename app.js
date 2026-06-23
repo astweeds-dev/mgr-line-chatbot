@@ -704,10 +704,7 @@ async function handleText(replyToken, userId, text) {
     }
 
     const token = createToken(userId);
-    const liffId = process.env.LIFF_ID;
-    const orderUrl = liffId
-      ? `https://liff.line.me/${liffId}?t=${token}`
-      : `${getBaseUrl()}/order.html?t=${token}`;
+    const orderUrl = `${getBaseUrl()}/order.html?t=${token}`;
 
     const subtitle = foodOpen && drinkOpen
       ? "อาหารตามสั่ง · กาแฟ · นม · โซดา"
