@@ -16,7 +16,13 @@ const config = {
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
 };
 const ADMIN_ID = process.env.ADMIN_USER_ID;
-const BASE_URL = process.env.BASE_URL;
+function getBaseUrl() {
+  try {
+    const raw = fs.readFileSync(path.join(__dirname, envFile), "utf8");
+    const m = raw.match(/^BASE_URL=(.+)$/m);
+    return m ? m[1].trim() : process.env.BASE_URL;
+  } catch { return process.env.BASE_URL; }
+}
 
 // จุดจัดส่งในร้าน (ตรงกับ LOCATIONS ใน public/order.html)
 const DELIVERY_LOCATIONS = [
@@ -380,7 +386,7 @@ app.post("/api/order", express.json(), async (req, res) => {
     // dev: test order (uid ขึ้นต้น "TEST") — ข้ามการ push LINE ทั้งหมด กัน quota/สแปมแอดมินจริง
     if (userId.startsWith("TEST")) return;
 
-    const qrUrl = `${BASE_URL}/images/qr-payment.jpg`;
+    const qrUrl = `${getBaseUrl()}/images/qr-payment.jpg`;
     client.pushMessage({
       to: userId,
       messages: [
@@ -468,7 +474,7 @@ app.post("/api/order", express.json(), async (req, res) => {
                   action: {
                     type: "uri",
                     label: "📋 เปิดหน้าออเดอร์/แนบสลิป",
-                    uri: `${BASE_URL}/order.html?oid=${orderId}&s=${slipToken}`,
+                    uri: `${getBaseUrl()}/order.html?oid=${orderId}&s=${slipToken}`,
                   },
                 },
                 {
@@ -538,7 +544,7 @@ app.post("/api/slip", slipLimiter, express.json({ limit: "15mb" }), async (req, 
     }
 
     const slipFile = await saveSlipImage(buffer, orderId, order.slipToken);
-    order.slipUrl = `${BASE_URL}/images/slips/${slipFile}`;
+    order.slipUrl = `${getBaseUrl()}/images/slips/${slipFile}`;
     store.saveOrder(orderId, order);
 
     // ✅ SlipOK ตรวจผ่าน + ยอดตรง → ยืนยันอัตโนมัติ (ไม่ต้องรอแอดมิน)
@@ -697,7 +703,7 @@ async function handleText(replyToken, userId, text) {
     }
 
     const token = createToken(userId);
-    const orderUrl = `${BASE_URL}/order.html?t=${token}`;
+    const orderUrl = `${getBaseUrl()}/order.html?t=${token}`;
 
     const subtitle = foodOpen && drinkOpen
       ? "อาหารตามสั่ง · กาแฟ · นม · โซดา"
@@ -970,7 +976,7 @@ async function handleImage(replyToken, userId, messageId) {
 
     // ย่อ+บีบอัด+เขียนแบบ async (ไม่บล็อก event loop)
     const slipFile = await saveSlipImage(buffer, orderId, order.slipToken);
-    order.slipUrl = `${BASE_URL}/images/slips/${slipFile}`;
+    order.slipUrl = `${getBaseUrl()}/images/slips/${slipFile}`;
     store.saveOrder(orderId, order);
 
     // ✅ SlipOK ตรวจผ่าน + ยอดตรง → ยืนยันอัตโนมัติ

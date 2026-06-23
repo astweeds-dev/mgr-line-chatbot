@@ -12,6 +12,20 @@ const CHECK_INTERVAL = 30_000;
 const OK_LOG_INTERVAL = 10 * 60_000;
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
 
+// หา cloudflared — ลอง PATH ก่อน, ถ้าไม่เจอก็ลอง default install paths
+function findCloudflared() {
+  try { execSync("cloudflared --version", { stdio: "pipe" }); return "cloudflared"; } catch {}
+  const candidates = [
+    path.join(process.env.ProgramFiles || "", "cloudflared", "cloudflared.exe"),
+    path.join(process.env["ProgramFiles(x86)"] || "", "cloudflared", "cloudflared.exe"),
+    "C:\\Program Files (x86)\\cloudflared\\cloudflared.exe",
+    "C:\\Program Files\\cloudflared\\cloudflared.exe",
+  ];
+  for (const p of candidates) { if (fs.existsSync(p)) return p; }
+  return "cloudflared";
+}
+const CLOUDFLARED = findCloudflared();
+
 let serverProc = null;
 let tunnelProc = null;
 let tunnelUrl = "";
@@ -150,7 +164,7 @@ function startTunnel() {
   if (isNamed) {
     tunnelUrl = `https://${config.TUNNEL_HOSTNAME}`;
     log(`Named Tunnel: ${config.TUNNEL_NAME} → ${tunnelUrl}`);
-    tunnelProc = spawn("cloudflared", ["tunnel", "run", config.TUNNEL_NAME], {
+    tunnelProc = spawn(CLOUDFLARED, ["tunnel", "run", config.TUNNEL_NAME], {
       cwd: DIR,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -161,14 +175,16 @@ function startTunnel() {
   } else {
     tunnelUrl = "";
     log("Starting Quick Tunnel...");
-    tunnelProc = spawn("cloudflared", ["tunnel", "--url", `http://localhost:${port}`], {
+    tunnelProc = spawn(CLOUDFLARED, ["tunnel", "--url", `http://localhost:${port}`], {
       cwd: DIR,
       stdio: ["ignore", "pipe", "pipe"],
     });
+    let urlHandled = false;
     const onData = (d) => {
       const text = d.toString();
       const match = text.match(/(https:\/\/[a-z0-9-]+\.trycloudflare\.com)/);
-      if (match && !tunnelUrl) {
+      if (match && !urlHandled) {
+        urlHandled = true;
         tunnelUrl = match[1];
         log(`Quick Tunnel URL: ${tunnelUrl}`);
         handleNewTunnelUrl(tunnelUrl);
@@ -179,6 +195,10 @@ function startTunnel() {
   }
 
   tunnelProc.stdout.on("data", () => {});
+  tunnelProc.on("error", (e) => {
+    log(`Tunnel spawn error: ${e.message}`);
+    tunnelProc = null;
+  });
   tunnelProc.on("exit", (code) => {
     log(`Tunnel exited (code ${code})`);
     tunnelProc = null;
@@ -193,12 +213,6 @@ async function handleNewTunnelUrl(url) {
   isRestarting = true;
   try {
     updateBaseUrl(url);
-    log("Restarting server with new URL...");
-    startServer();
-    for (let i = 0; i < 5; i++) {
-      await sleep(2000);
-      if (await checkHealth()) break;
-    }
     log("Updating LINE webhook...");
     try {
       execSync("node update-webhook.js", {
