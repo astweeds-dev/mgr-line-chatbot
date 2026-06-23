@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const sharp = require("sharp");
+const store = require("./db");
 const { middleware, messagingApi } = require("@line/bot-sdk");
 const NODE_ENV = (process.env.NODE_ENV || "production").trim();
 const envFile = NODE_ENV === "development" ? ".env.development" : ".env";
@@ -154,6 +155,11 @@ const sessions = new Map();
 const pendingOrders = new Map();
 const orderTokens = new Map();
 
+// โหลดออเดอร์ที่ยังค้าง + session กลับเข้าหน่วยความจำตอน boot (กันข้อมูลหายเมื่อ restart)
+for (const [orderId, order] of store.loadActiveOrders()) pendingOrders.set(orderId, order);
+for (const [userId, session] of store.loadSessions()) sessions.set(userId, session);
+console.log(`[DB] loaded ${pendingOrders.size} active order(s), ${sessions.size} session(s)`);
+
 // คงค่า orderCounter ข้ามการ restart (กัน orderId ซ้ำ → สลิป/ยอดเงินไม่สลับกัน)
 // แยกไฟล์ตาม NODE_ENV เพื่อไม่ให้ dev/prod ใช้เลขเดียวกัน
 const COUNTER_FILE = path.join(__dirname, "data", `counter.${NODE_ENV}.json`);
@@ -293,11 +299,12 @@ app.post("/api/order", express.json(), async (req, res) => {
       const oldOrder = pendingOrders.get(session.orderId);
       if (oldOrder.state === "await_slip") {
         pendingOrders.delete(session.orderId);
+        store.deleteOrder(session.orderId);
       }
     }
 
     const slipToken = crypto.randomBytes(16).toString("hex");
-    pendingOrders.set(orderId, {
+    const newOrder = {
       userId,
       items: items.map((it) => ({ name: it.name, qty: it.qty, price: it.price })),
       summary,
@@ -305,10 +312,14 @@ app.post("/api/order", express.json(), async (req, res) => {
       delivery: { location: dLoc, name: dName, phone: dPhone },
       state: "await_slip",
       slipToken,
-    });
+      createdAt: Date.now(),
+    };
+    pendingOrders.set(orderId, newOrder);
+    store.saveOrder(orderId, newOrder);
 
     session.state = "await_slip";
     session.orderId = orderId;
+    store.saveSession(userId, session);
 
     res.json({ success: true, orderId, slipToken });
 
@@ -461,12 +472,15 @@ app.post("/api/slip", express.json({ limit: "15mb" }), async (req, res) => {
     // จองสถานะก่อน (sync) กันส่งสลิปซ้ำซ้อนตอนคนเยอะ — คืนสถานะถ้าเขียนไฟล์ล้มเหลว
     order.state = "slip_sent";
     lockedOrder = order;
+    store.saveOrder(orderId, order);
 
     const slipFile = await saveSlipImage(buffer, orderId, order.slipToken);
 
     order.slipUrl = `${BASE_URL}/images/slips/${slipFile}`;
+    store.saveOrder(orderId, order);
     const cs = getSession(order.userId);
     cs.state = "await_confirm";
+    store.saveSession(order.userId, cs);
 
     res.json({ success: true });
     lockedOrder = null; // สำเร็จแล้ว ไม่ต้องคืนสถานะ
@@ -488,7 +502,10 @@ app.post("/api/slip", express.json({ limit: "15mb" }), async (req, res) => {
     }).catch(() => {});
   } catch (err) {
     console.error("Web slip error:", err);
-    if (lockedOrder) lockedOrder.state = "await_slip"; // คืนสถานะให้ลองส่งใหม่ได้
+    if (lockedOrder) {
+      lockedOrder.state = "await_slip"; // คืนสถานะให้ลองส่งใหม่ได้
+      store.saveOrder(req.body.orderId, lockedOrder);
+    }
     if (!res.headersSent) res.status(500).json({ error: "เกิดข้อผิดพลาด กรุณาลองใหม่" });
   }
 });
@@ -784,6 +801,8 @@ async function handleImage(replyToken, userId, messageId) {
   // จองสถานะก่อน (sync) กันรับสลิปซ้ำซ้อนตอนคนเยอะ
   order.state = "slip_sent";
   session.state = "await_confirm";
+  store.saveOrder(orderId, order);
+  store.saveSession(userId, session);
 
   try {
     const stream = await blobClient.getMessageContent(messageId);
@@ -794,6 +813,7 @@ async function handleImage(replyToken, userId, messageId) {
     // ย่อ+บีบอัด+เขียนแบบ async (ไม่บล็อก event loop)
     const slipFile = await saveSlipImage(buffer, orderId, order.slipToken);
     order.slipUrl = `${BASE_URL}/images/slips/${slipFile}`;
+    store.saveOrder(orderId, order);
 
     await reply(replyToken, [
       {
@@ -816,6 +836,8 @@ async function handleImage(replyToken, userId, messageId) {
     // คืนสถานะให้ลูกค้าส่งสลิปใหม่ได้
     order.state = "await_slip";
     session.state = "await_slip";
+    store.saveOrder(orderId, order);
+    store.saveSession(userId, session);
     return reply(replyToken, [
       { type: "text", text: "❌ เกิดข้อผิดพลาด กรุณาส่งสลิปอีกครั้งครับ" },
     ]);
@@ -846,9 +868,11 @@ async function handlePostback(replyToken, userId, data) {
     }
 
     pendingOrders.delete(oid);
+    store.deleteOrder(oid);
     if (session.orderId === oid) {
       session.state = "idle";
       session.orderId = null;
+      store.saveSession(userId, session);
     }
 
     return reply(replyToken, [
@@ -874,6 +898,8 @@ async function handlePostback(replyToken, userId, data) {
     cs.state = "idle";
     cs.orderId = null;
     order.state = "confirmed";
+    store.saveOrder(orderId, order);
+    store.saveSession(order.userId, cs);
 
     const now = new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" });
     const dInfo = deliveryText(order);
@@ -953,8 +979,10 @@ async function handlePostback(replyToken, userId, data) {
 
     if (order.state === "confirmed") {
       pendingOrders.delete(orderId);
+      store.deleteOrder(orderId);
       cs.state = "idle";
       cs.orderId = null;
+      store.saveSession(order.userId, cs);
       client.pushMessage({
         to: order.userId,
         messages: [
@@ -977,6 +1005,8 @@ async function handlePostback(replyToken, userId, data) {
 
     order.state = "await_slip";
     cs.state = "await_slip";
+    store.saveOrder(orderId, order);
+    store.saveSession(order.userId, cs);
 
     client.pushMessage({
       to: order.userId,

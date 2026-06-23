@@ -4,3 +4,5 @@ node_modules/
 .env.production
 *.log
 images/slips/
+# runtime state (counter + sqlite) — เครื่องละชุด ไม่ commit
+data/
