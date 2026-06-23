@@ -229,6 +229,22 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
+// ==================== Order Status ====================
+
+const ORDER_STATUSES = ["received", "preparing", "delivering", "delivered"];
+const ORDER_STATUS_LABELS = {
+  none:       { th: "รอชำระเงิน", en: "Awaiting payment" },
+  received:   { th: "รับออเดอร์แล้ว", en: "Order received" },
+  preparing:  { th: "กำลังเตรียม", en: "Preparing" },
+  delivering: { th: "กำลังจัดส่ง", en: "Delivering" },
+  delivered:  { th: "จัดส่งแล้ว", en: "Delivered" },
+};
+const ORDER_STATUS_EMOJI = { received: "📋", preparing: "👨‍🍳", delivering: "🛵", delivered: "✅" };
+
+// ==================== Admin Token ====================
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || crypto.randomBytes(16).toString("hex");
+if (!process.env.ADMIN_TOKEN) console.log(`[ADMIN] generated token: ${ADMIN_TOKEN}`);
+
 // ==================== Rate Limiter ====================
 
 function createLimiter(windowMs, max) {
@@ -280,6 +296,137 @@ if (NODE_ENV === "development") {
     res.json({ count: orders.length, orderCounter, orders });
   });
 }
+
+// ==================== Admin API ====================
+
+function requireAdmin(req, res, next) {
+  const t = req.query.token || req.headers["x-admin-token"];
+  if (t !== ADMIN_TOKEN) return res.status(401).json({ error: "Unauthorized" });
+  next();
+}
+
+// ดึงออเดอร์ทั้งหมด (admin dashboard)
+app.get("/api/admin/orders", requireAdmin, (_req, res) => {
+  const all = store.loadAllOrders(200);
+  const orders = all.map(([orderId, o]) => ({
+    orderId,
+    total: o.total,
+    state: o.state,
+    orderStatus: o.orderStatus || "none",
+    statusEta: o.statusEta || 0,
+    statusAt: o.statusAt || 0,
+    summary: o.summary,
+    delivery: o.delivery,
+    createdAt: o.createdAt,
+    slipUrl: o.slipUrl,
+  }));
+  res.json({ orders, adminToken: ADMIN_TOKEN });
+});
+
+// อัปเดตสถานะออเดอร์ (admin)
+app.post("/api/admin/status", requireAdmin, express.json(), async (req, res) => {
+  const { orderId, status, eta } = req.body;
+  if (!ORDER_STATUSES.includes(status)) return res.status(400).json({ error: "Invalid status" });
+
+  const order = pendingOrders.get(orderId);
+  if (!order) return res.status(404).json({ error: "Order not found" });
+
+  order.orderStatus = status;
+  order.statusEta = eta || 0;
+  order.statusAt = Date.now();
+  store.saveOrder(orderId, order);
+
+  if (status === "delivered") {
+    pendingOrders.delete(orderId);
+    const cs = getSession(order.userId);
+    cs.state = "idle";
+    cs.orderId = null;
+    store.saveSession(order.userId, cs);
+  }
+
+  res.json({ success: true });
+
+  if (order.userId.startsWith("TEST")) return;
+
+  const emoji = ORDER_STATUS_EMOJI[status] || "📋";
+  const label = ORDER_STATUS_LABELS[status]?.th || status;
+  let text = `${emoji} ออเดอร์ #${orderId}\nสถานะ: ${label}`;
+  if (eta && status !== "delivered") text += `\n⏱ ประมาณ ${eta} นาที`;
+  if (status === "delivered") text += "\n\nขอบคุณที่ใช้บริการครับ 🙏";
+
+  client.pushMessage({ to: order.userId, messages: [{ type: "text", text }] }).catch(e => console.error("Status push error:", e.message));
+});
+
+// admin token (dev only — ให้เปิดหน้า admin ได้)
+app.get("/api/admin/token", (_req, res) => {
+  if (NODE_ENV !== "development") return res.status(403).json({ error: "Dev only" });
+  res.json({ token: ADMIN_TOKEN });
+});
+
+// ==================== Admin Menu API ====================
+
+app.get("/api/admin/menu", requireAdmin, (_req, res) => {
+  res.json({ items: store.loadMenuItems() });
+});
+
+app.post("/api/admin/menu", requireAdmin, express.json(), (req, res) => {
+  const item = req.body;
+  if (!item.id || !item.cat || !item.nameTh) return res.status(400).json({ error: "Missing fields" });
+  store.saveMenuItem(item);
+  reloadMenuFromDb();
+  res.json({ success: true });
+});
+
+app.delete("/api/admin/menu/:id", requireAdmin, (req, res) => {
+  store.deleteMenuItem(+req.params.id);
+  reloadMenuFromDb();
+  res.json({ success: true });
+});
+
+// Public menu API (order.html ใช้)
+app.get("/api/menu", (_req, res) => {
+  const items = store.loadMenuItems();
+  if (items.length === 0) {
+    res.json({ items: [], source: "hardcoded" });
+  } else {
+    res.json({ items, source: "db" });
+  }
+});
+
+// ==================== Menu from DB ====================
+
+function reloadMenuFromDb() {
+  const items = store.loadMenuItems();
+  if (items.length === 0) return;
+  // rebuild MENU_PRICES from DB
+  for (const key of Object.keys(MENU_PRICES)) delete MENU_PRICES[key];
+  for (const item of items) {
+    if (!item.enabled) continue;
+    const addonMap = {};
+    for (const a of item.addons) addonMap[a.id || a.name] = a.price;
+    MENU_PRICES[item.id] = { price: item.price, addons: addonMap };
+  }
+}
+reloadMenuFromDb();
+
+// ==================== API: Order Status (public — customer) ====================
+
+app.get("/api/order-tracking", (req, res) => {
+  const { oid, s } = req.query;
+  const order = pendingOrders.get(oid);
+  // also check completed orders in DB
+  if (!order) {
+    const all = store.loadAllOrders(500);
+    const found = all.find(([id]) => id === oid);
+    if (found && found[1].slipToken === s) {
+      const o = found[1];
+      return res.json({ orderId: oid, orderStatus: o.orderStatus || "none", statusEta: o.statusEta || 0, statusAt: o.statusAt || 0, state: o.state });
+    }
+    return res.status(404).json({ error: "Not found" });
+  }
+  if (!s || order.slipToken !== s) return res.status(401).json({ error: "Invalid token" });
+  res.json({ orderId: oid, orderStatus: order.orderStatus || "none", statusEta: order.statusEta || 0, statusAt: order.statusAt || 0, state: order.state });
+});
 
 // ==================== API: รับออเดอร์จากเว็บ ====================
 
@@ -374,6 +521,9 @@ app.post("/api/order", express.json(), async (req, res) => {
       state: "await_slip",
       slipToken,
       createdAt: Date.now(),
+      orderStatus: "none",
+      statusEta: 0,
+      statusAt: 0,
     };
     pendingOrders.set(orderId, newOrder);
     store.saveOrder(orderId, newOrder);
@@ -599,7 +749,7 @@ app.get("/api/order-status", (req, res) => {
   if (!order || !s || order.slipToken !== s) {
     return res.status(404).json({ error: "ไม่พบออเดอร์ หรือออเดอร์หมดอายุแล้ว" });
   }
-  res.json({ orderId: oid, items: order.items || [], total: order.total, state: order.state });
+  res.json({ orderId: oid, items: order.items || [], total: order.total, state: order.state, orderStatus: order.orderStatus || "none", statusEta: order.statusEta || 0, statusAt: order.statusAt || 0 });
 });
 
 // ==================== LINE Webhook ====================
@@ -903,6 +1053,8 @@ function setConfirmed(orderId, order) {
   cs.state = "idle";
   cs.orderId = null;
   order.state = "confirmed";
+  order.orderStatus = "received";
+  order.statusAt = Date.now();
   store.saveOrder(orderId, order);
   store.saveSession(order.userId, cs);
 }
@@ -1083,58 +1235,43 @@ async function handlePostback(replyToken, userId, data) {
     setConfirmed(orderId, order);
     notifyCustomerConfirmed(orderId, order);
 
-    const now = new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" });
-    const dInfo = deliveryText(order);
-    const dPart = dInfo ? `\n${dInfo}` : "";
+    return reply(replyToken, [adminStatusFlex(orderId, order)]);
+  }
 
-    return reply(replyToken, [
-      {
-        type: "flex",
-        altText: `✅ ยืนยัน #${orderId} แล้ว`,
-        contents: {
-          type: "bubble",
-          body: {
-            type: "box",
-            layout: "vertical",
-            spacing: "md",
-            contents: [
-              {
-                type: "text",
-                text: `✅ ยืนยันแล้ว - ${now}`,
-                weight: "bold",
-                color: "#27AE60",
-                wrap: true,
-              },
-              {
-                type: "text",
-                text: `📋 #${orderId}${dPart}\n${order.summary}\n💰 รวม: ${order.total}.-`,
-                size: "sm",
-                color: "#888888",
-                wrap: true,
-              },
-            ],
-            paddingAll: "15px",
-          },
-          footer: {
-            type: "box",
-            layout: "vertical",
-            contents: [
-              {
-                type: "button",
-                style: "secondary",
-                action: {
-                  type: "postback",
-                  label: "❌ ยกเลิก/คืนเงิน",
-                  data: `a=admin_reject&oid=${orderId}`,
-                  displayText: `ยกเลิก #${orderId}`,
-                },
-              },
-            ],
-            paddingAll: "15px",
-          },
-        },
-      },
-    ]);
+  if (action === "admin_status") {
+    if (userId !== ADMIN_ID) return reply(replyToken, [{ type: "text", text: "⚠️ เฉพาะแอดมินเท่านั้น" }]);
+    const orderId = params.get("oid");
+    const status = params.get("st");
+    if (!ORDER_STATUSES.includes(status)) return reply(replyToken, [{ type: "text", text: "❌ สถานะไม่ถูกต้อง" }]);
+
+    const order = pendingOrders.get(orderId);
+    if (!order) return reply(replyToken, [{ type: "text", text: `❌ ไม่พบออเดอร์ #${orderId}` }]);
+
+    order.orderStatus = status;
+    order.statusAt = Date.now();
+    store.saveOrder(orderId, order);
+
+    if (status === "delivered") {
+      pendingOrders.delete(orderId);
+      const cs = getSession(order.userId);
+      cs.state = "idle";
+      cs.orderId = null;
+      store.saveSession(order.userId, cs);
+    }
+
+    // แจ้งลูกค้า
+    if (!order.userId.startsWith("TEST")) {
+      const emoji = ORDER_STATUS_EMOJI[status] || "📋";
+      const label = ORDER_STATUS_LABELS[status]?.th || status;
+      let text = `${emoji} ออเดอร์ #${orderId}\nสถานะ: ${label}`;
+      if (status === "delivered") text += "\n\nขอบคุณที่ใช้บริการครับ 🙏";
+      client.pushMessage({ to: order.userId, messages: [{ type: "text", text }] }).catch(() => {});
+    }
+
+    if (status === "delivered") {
+      return reply(replyToken, [{ type: "text", text: `✅ ออเดอร์ #${orderId} จัดส่งเสร็จแล้ว` }]);
+    }
+    return reply(replyToken, [adminStatusFlex(orderId, order)]);
   }
 
   if (action === "admin_reject") {
@@ -1194,6 +1331,67 @@ async function handlePostback(replyToken, userId, data) {
       { type: "text", text: `❌ ปฏิเสธ #${orderId} — แจ้งลูกค้าแล้ว` },
     ]);
   }
+}
+
+// ==================== Admin Status Flex ====================
+
+function adminStatusFlex(orderId, order) {
+  const now = new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" });
+  const dInfo = deliveryText(order);
+  const dPart = dInfo ? `\n${dInfo}` : "";
+  const curStatus = order.orderStatus || "received";
+  const curIdx = ORDER_STATUSES.indexOf(curStatus);
+  const nextStatuses = ORDER_STATUSES.slice(curIdx + 1);
+  const statusLabel = ORDER_STATUS_LABELS[curStatus]?.th || curStatus;
+
+  const buttons = nextStatuses.map(s => ({
+    type: "button",
+    style: s === "delivered" ? "primary" : "secondary",
+    color: s === "delivered" ? "#27AE60" : undefined,
+    height: "sm",
+    action: {
+      type: "postback",
+      label: `${ORDER_STATUS_EMOJI[s]} ${ORDER_STATUS_LABELS[s].th}`,
+      data: `a=admin_status&oid=${orderId}&st=${s}`,
+      displayText: `อัปเดต #${orderId} → ${ORDER_STATUS_LABELS[s].th}`,
+    },
+  }));
+  buttons.push({
+    type: "button",
+    style: "secondary",
+    height: "sm",
+    action: {
+      type: "postback",
+      label: "❌ ยกเลิก/คืนเงิน",
+      data: `a=admin_reject&oid=${orderId}`,
+      displayText: `ยกเลิก #${orderId}`,
+    },
+  });
+
+  return {
+    type: "flex",
+    altText: `📋 #${orderId} — ${statusLabel}`,
+    contents: {
+      type: "bubble",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        contents: [
+          { type: "text", text: `${ORDER_STATUS_EMOJI[curStatus] || "📋"} ${statusLabel} - ${now}`, weight: "bold", color: "#27AE60", wrap: true },
+          { type: "text", text: `📋 #${orderId}${dPart}\n${order.summary}\n💰 รวม: ${order.total}.-`, size: "sm", color: "#888888", wrap: true },
+        ],
+        paddingAll: "15px",
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        contents: buttons,
+        paddingAll: "15px",
+      },
+    },
+  };
 }
 
 // ==================== Helper ====================

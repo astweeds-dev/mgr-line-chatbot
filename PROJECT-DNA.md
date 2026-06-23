@@ -25,7 +25,8 @@ mgr-line-chatbot/
 ├── .env                       # MGR Main credentials (gitignored)
 ├── .env.development           # Dev credentials (gitignored)
 ├── public/
-│   └── order.html             # Ordering web UI — bilingual (Thai/English), GrabFood-style
+│   ├── order.html             # Ordering web UI — bilingual (Thai/English), GrabFood-style
+│   └── admin.html             # Admin dashboard — orders, status tracking, menu management
 ├── images/
 │   ├── mgr logo.jpg           # Store logo (space in filename → URL-encode)
 │   ├── qr-payment.jpg         # QR Code PromptPay
@@ -99,9 +100,22 @@ TUNNEL_HOSTNAME=xxx            # e.g. mgr.example.com
 - Session state → "await_confirm"
 
 ### 5. Admin ยืนยัน/ปฏิเสธ
-- admin_confirm → แจ้งลูกค้า "ชำระเรียบร้อย กำลังเตรียมอาหาร"
+- admin_confirm → แจ้งลูกค้า "ชำระเรียบร้อย กำลังเตรียมอาหาร" + orderStatus = "received"
 - admin_reject → แจ้งลูกค้า "สลิปไม่ผ่าน กรุณาส่งใหม่" (state กลับไป await_slip)
 - admin_cancel → ยกเลิกออเดอร์ + แจ้งลูกค้า
+
+### 6. แจ้งสถานะออเดอร์ (Order Tracking)
+- Admin กดอัปเดตสถานะผ่าน LINE postback buttons หรือ Admin Dashboard
+- สถานะ: received → preparing → delivering → delivered
+- แต่ละขั้น push แจ้งลูกค้าทาง LINE + แสดง ETA (ถ้ากำหนด)
+- delivered → ออเดอร์เสร็จสมบูรณ์ ลบออกจาก pendingOrders
+
+### 7. Admin Dashboard (public/admin.html)
+- หน้าเว็บ admin สำหรับจัดการออเดอร์ + เมนู
+- Login ด้วย ADMIN_TOKEN (auto-generated หรือตั้งใน .env)
+- แท็บ: ออเดอร์ (active) / ประวัติ / เมนู
+- อัปเดตสถานะออเดอร์ + ตั้ง ETA + ดูสลิป
+- จัดการเมนู: เพิ่ม/แก้ไข/ลบ/เปิด-ปิด
 
 ## Session States
 ```
@@ -118,7 +132,7 @@ idle → (สั่งอาหาร) → await_slip → (ส่งสลิป
   - `orderTokens`: Map<token, {userId, createdAt}> — TTL 30 min, cleanup ทุก 5 min
   - `orderCounter`: persisted to `data/counter.{env}.json`
 
-## Menu Data (hardcoded in order.html + MENU_PRICES in app.js)
+## Menu Data (hardcoded in order.html + MENU_PRICES in app.js, or managed via Admin Dashboard → SQLite)
 
 | Category | IDs | Variants | Add-ons | Price range |
 |----------|-----|----------|---------|-------------|
@@ -146,8 +160,16 @@ Server uses `parseCartKey()` + `calcUnitPrice()` to recompute prices server-side
 | POST | /api/order | 60/min/IP | Submit order (token + items + delivery info) |
 | POST | /api/slip | 10/min/IP | Upload payment slip (base64 image) |
 | GET | /api/order-status | 60/min/IP | Resume order page (oid + slipToken) |
+| GET | /api/order-tracking | 60/min/IP | Customer order status tracking (oid + slipToken) |
+| GET | /api/menu | 60/min/IP | Public menu items (from DB or hardcoded fallback) |
+| GET | /api/admin/orders | admin token | All orders for admin dashboard |
+| POST | /api/admin/status | admin token | Update order status + ETA |
+| GET | /api/admin/menu | admin token | List menu items from DB |
+| POST | /api/admin/menu | admin token | Add/update menu item |
+| DELETE | /api/admin/menu/:id | admin token | Delete menu item |
+| GET | /api/admin/token | dev only | Get auto-generated admin token |
 | GET | /images/* | — | Static files (QR, logo, slips) |
-| GET | /* (public/) | — | Static files (order.html) |
+| GET | /* (public/) | — | Static files (order.html, admin.html) |
 
 ## Security
 - **Rate limiting**: API 60 req/min/IP, slip upload 10 req/min/IP

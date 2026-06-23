@@ -125,13 +125,57 @@ Node.js process that manages the entire production stack:
 - Secrets in `.env` (gitignored)
 - Cloudflare Tunnel (no exposed ports)
 
+## Order Status Tracking (added 2026-06-24)
+Admin can update order status via LINE postback buttons or Admin Dashboard:
+- `received` → `preparing` → `delivering` → `delivered`
+- Each status change pushes a notification to the customer via LINE
+- Admin can set ETA (minutes) when updating status
+- Status stored in `orderStatus` field in orders table
+
+## Admin Dashboard (`public/admin.html`, added 2026-06-24)
+Web-based admin panel for managing orders and menu:
+- **Login**: requires `ADMIN_TOKEN` (auto-generated on startup, or set in `.env`)
+- **Orders tab**: view active orders, update status with ETA, view slips
+- **History tab**: view completed/delivered orders
+- **Menu tab**: add/edit/delete menu items stored in SQLite `menu_items` table
+- Access at: `{BASE_URL}/admin.html?token={ADMIN_TOKEN}`
+- Auto-refreshes active orders every 30 seconds
+
+### Menu Management
+- Menu items can be managed via Admin Dashboard → Menu tab
+- Items stored in SQLite `menu_items` table (id, cat, nameTh, nameEn, price, addons, level, etc.)
+- If no items in DB → falls back to hardcoded menu in `order.html` and `MENU_PRICES` in `app.js`
+- When items are saved in DB → `MENU_PRICES` is rebuilt from DB (server-side price validation)
+
+### Admin API Endpoints
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | /api/admin/orders | token | List all orders |
+| POST | /api/admin/status | token | Update order status |
+| GET | /api/admin/menu | token | List menu items from DB |
+| POST | /api/admin/menu | token | Add/update menu item |
+| DELETE | /api/admin/menu/:id | token | Delete menu item |
+| GET | /api/admin/token | none (dev only) | Get admin token |
+| GET | /api/menu | none | Public menu API |
+| GET | /api/order-tracking | slipToken | Customer order status |
+
+## Named Tunnel Setup
+For a fixed URL (no random URL on each restart):
+1. Buy a domain (~350 baht/year) and add to Cloudflare
+2. Run `setup-named-tunnel.bat` to create a Named Tunnel
+3. Set in `.env`:
+   ```
+   TUNNEL_NAME=mgr-tunnel
+   TUNNEL_HOSTNAME=order.yourdomain.com
+   ```
+4. Watchdog will auto-detect Named Tunnel config and use fixed URL
+
 ## Status
-Project is **feature-complete** — food & drinks ordering, payment, slip verification, watchdog, and auto-start are all working.
+Project is **feature-complete** — ordering, payment, slip verification, order tracking, admin dashboard, menu management, watchdog, and auto-start are all working.
 
 **Optional future upgrades** (not blocking):
 - Named Tunnel (fixed URL, requires Cloudflare domain ~350 baht/year) — `setup-named-tunnel.bat` ready
-- Admin dashboard / order history
-- Menu management UI (currently hardcoded)
+- Dynamic menu loading in `order.html` (currently menu in order.html is still hardcoded; DB menu only affects server-side price validation)
 
 ## Commands
 ```bash

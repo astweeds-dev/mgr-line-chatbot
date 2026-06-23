@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MGR Admin Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Sarabun',sans-serif;background:#f5f5f0;color:#333;min-height:100vh}
+.header{background:linear-gradient(135deg,#5A4F00,#8a7f33);color:#F9E84A;padding:16px 20px;position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between}
+.header h1{font-size:18px;font-weight:800}
+.header .badge{background:#F9E84A;color:#5A4F00;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:700}
+.tabs{display:flex;gap:0;background:#fff;border-bottom:2px solid #e8e4cc;position:sticky;top:54px;z-index:40}
+.tab{flex:1;padding:12px;text-align:center;font-size:14px;font-weight:700;color:#999;cursor:pointer;border-bottom:3px solid transparent;transition:all .15s}
+.tab.active{color:#5A4F00;border-bottom-color:#F9E84A;background:#FFFEF5}
+.tab .count{background:#E85D3A;color:#fff;font-size:11px;padding:1px 7px;border-radius:10px;margin-left:4px}
+
+/* Login */
+.login-wrap{display:flex;align-items:center;justify-content:center;min-height:80vh;padding:20px}
+.login-box{background:#fff;border-radius:16px;padding:32px;max-width:360px;width:100%;box-shadow:0 2px 12px rgba(0,0,0,.06);text-align:center}
+.login-box h2{font-size:20px;color:#5A4F00;margin-bottom:16px}
+.login-box input{width:100%;padding:14px;border-radius:12px;border:1.5px solid #e8e4cc;font-size:15px;font-family:inherit;margin-bottom:12px}
+.login-box input:focus{outline:none;border-color:#F9E84A}
+.login-box button{width:100%;padding:14px;border-radius:12px;font-size:16px;font-weight:800;background:#5A4F00;color:#F9E84A;border:none;cursor:pointer}
+
+/* Orders */
+.orders{padding:12px}
+.order-card{background:#fff;border-radius:14px;padding:16px;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.04);border-left:4px solid #e8e4cc}
+.order-card.st-received{border-left-color:#2196F3}
+.order-card.st-preparing{border-left-color:#FF9800}
+.order-card.st-delivering{border-left-color:#9C27B0}
+.order-card.st-delivered{border-left-color:#27AE60}
+.order-card.st-none{border-left-color:#ccc}
+.oc-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.oc-id{font-size:16px;font-weight:800;color:#5A4F00}
+.oc-time{font-size:12px;color:#aaa}
+.oc-status{display:inline-block;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:700;margin-bottom:6px}
+.oc-status.s-none{background:#f0f0f0;color:#999}
+.oc-status.s-received{background:#E3F2FD;color:#1565C0}
+.oc-status.s-preparing{background:#FFF3E0;color:#E65100}
+.oc-status.s-delivering{background:#F3E5F5;color:#7B1FA2}
+.oc-status.s-delivered{background:#E8F5E9;color:#2E7D32}
+.oc-status.s-await_slip{background:#FFF8E1;color:#F57F17}
+.oc-status.s-slip_sent{background:#FCE4EC;color:#C62828}
+.oc-status.s-confirmed{background:#E8F5E9;color:#2E7D32}
+.oc-delivery{font-size:13px;color:#5A4F00;font-weight:600;margin-bottom:4px}
+.oc-summary{font-size:13px;color:#666;white-space:pre-line;margin-bottom:6px}
+.oc-total{font-size:15px;font-weight:800;color:#E85D3A}
+.oc-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.oc-actions button{padding:8px 14px;border-radius:8px;font-size:13px;font-weight:700;border:none;cursor:pointer;font-family:inherit;transition:all .1s}
+.oc-actions button:active{transform:scale(.95)}
+.btn-preparing{background:#FF9800;color:#fff}
+.btn-delivering{background:#9C27B0;color:#fff}
+.btn-delivered{background:#27AE60;color:#fff}
+.btn-received{background:#2196F3;color:#fff}
+.eta-input{width:60px;padding:6px 8px;border-radius:8px;border:1.5px solid #e8e4cc;font-size:13px;font-family:inherit;text-align:center}
+.eta-label{font-size:12px;color:#888;align-self:center}
+.oc-slip{margin-top:8px}
+.oc-slip img{max-width:120px;border-radius:8px;border:1px solid #e8e4cc;cursor:pointer}
+.slip-modal{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;z-index:200;cursor:pointer}
+.slip-modal.show{display:flex}
+.slip-modal img{max-width:90vw;max-height:90vh;border-radius:8px}
+.empty{text-align:center;padding:60px 20px;color:#ccc;font-size:15px}
+.refresh-btn{background:none;border:none;color:#F9E84A;font-size:14px;font-weight:700;cursor:pointer;padding:6px 12px;border-radius:8px}
+.refresh-btn:hover{background:rgba(249,232,74,.15)}
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-100px);background:#27AE60;color:#fff;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:600;z-index:300;transition:transform .3s}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.toast.err{background:#E74C3C}
+
+/* Menu management */
+.menu-section{padding:12px}
+.menu-card{background:#fff;border-radius:12px;padding:14px 16px;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.04);display:flex;justify-content:space-between;align-items:center}
+.menu-card.disabled{opacity:.5}
+.mc-left{flex:1}
+.mc-name{font-size:14px;font-weight:700}
+.mc-cat{font-size:12px;color:#888}
+.mc-price{font-size:13px;color:#5A4F00;font-weight:600}
+.mc-actions{display:flex;gap:6px}
+.mc-actions button{padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;border:none;cursor:pointer;font-family:inherit}
+.btn-edit-menu{background:#FFF3E0;color:#E65100}
+.btn-del-menu{background:#FDEAEA;color:#E74C3C}
+.btn-toggle-menu{background:#E8F5E9;color:#2E7D32}
+.add-menu-btn{display:block;width:calc(100% - 24px);margin:12px auto;padding:14px;border-radius:12px;font-size:15px;font-weight:800;background:#5A4F00;color:#F9E84A;border:none;cursor:pointer}
+
+/* Menu form modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:100;padding:16px}
+.modal-overlay.show{display:flex}
+.modal-box{background:#fff;border-radius:16px;padding:24px;max-width:480px;width:100%;max-height:90vh;overflow-y:auto}
+.modal-box h3{font-size:18px;color:#5A4F00;margin-bottom:16px}
+.form-group{margin-bottom:12px}
+.form-group label{display:block;font-size:13px;font-weight:700;color:#5A4F00;margin-bottom:4px}
+.form-group input,.form-group select,.form-group textarea{width:100%;padding:10px;border-radius:10px;border:1.5px solid #e8e4cc;font-size:14px;font-family:inherit}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:#F9E84A}
+.form-row{display:flex;gap:8px}
+.form-row .form-group{flex:1}
+.modal-actions{display:flex;gap:8px;margin-top:16px}
+.modal-actions button{flex:1;padding:12px;border-radius:10px;font-size:15px;font-weight:700;border:none;cursor:pointer;font-family:inherit}
+.btn-save{background:#27AE60;color:#fff}
+.btn-cancel{background:#f0f0f0;color:#666}
+</style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="login-page" class="login-wrap">
+  <div class="login-box">
+    <h2>🔐 MGR Admin</h2>
+    <input type="text" id="token-input" placeholder="Admin Token">
+    <button onclick="doLogin()">เข้าสู่ระบบ</button>
+  </div>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard" style="display:none">
+  <div class="header">
+    <h1>📊 MGR Admin</h1>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="refresh-btn" onclick="loadOrders()">🔄 รีเฟรช</button>
+      <span class="badge" id="env-badge"></span>
+    </div>
+  </div>
+  <div class="tabs">
+    <div class="tab active" data-tab="active" onclick="switchTab('active')">ออเดอร์ <span class="count" id="count-active">0</span></div>
+    <div class="tab" data-tab="history" onclick="switchTab('history')">ประวัติ</div>
+    <div class="tab" data-tab="menu" onclick="switchTab('menu')">เมนู</div>
+  </div>
+
+  <div id="tab-active" class="orders"></div>
+  <div id="tab-history" class="orders" style="display:none"></div>
+  <div id="tab-menu" class="menu-section" style="display:none"></div>
+</div>
+
+<!-- Slip modal -->
+<div class="slip-modal" id="slip-modal" onclick="this.classList.remove('show')">
+  <img id="slip-img" src="">
+</div>
+
+<!-- Menu form modal -->
+<div class="modal-overlay" id="menu-modal">
+  <div class="modal-box">
+    <h3 id="menu-modal-title">เพิ่มเมนู</h3>
+    <div class="form-row">
+      <div class="form-group"><label>ID</label><input type="number" id="mf-id"></div>
+      <div class="form-group"><label>หมวด</label>
+        <select id="mf-cat">
+          <option value="food">อาหาร</option>
+          <option value="coffee">กาแฟ</option>
+          <option value="milk">นม & ชา</option>
+          <option value="soda">โซดา</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>ชื่อ (ไทย)</label><input type="text" id="mf-nameTh"></div>
+      <div class="form-group"><label>ชื่อ (EN)</label><input type="text" id="mf-nameEn"></div>
+    </div>
+    <div class="form-group"><label>ราคา (JSON เช่น {"default":70} หรือ {"หมู":70,"เนื้อ":80})</label><input type="text" id="mf-price" placeholder='{"default":70}'></div>
+    <div class="form-group"><label>Add-ons (JSON array เช่น [{"id":"น้ำผึ้ง","price":10}])</label><textarea id="mf-addons" rows="2" placeholder="[]"></textarea></div>
+    <div class="form-group"><label>Level (JSON array เช่น ["เผ็ดน้อย","เผ็ดปกติ","เผ็ดมาก"])</label><textarea id="mf-level" rows="2" placeholder="[]"></textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label>Level Label</label><input type="text" id="mf-levelLabel" placeholder="ระดับความเผ็ด"></div>
+      <div class="form-group"><label>Variant Label</label><input type="text" id="mf-variantLabel" placeholder="เนื้อสัตว์"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>ลำดับ</label><input type="number" id="mf-sortOrder" value="0"></div>
+      <div class="form-group"><label>เปิดใช้</label>
+        <select id="mf-enabled"><option value="1">เปิด</option><option value="0">ปิด</option></select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeMenuModal()">ยกเลิก</button>
+      <button class="btn-save" onclick="saveMenu()">บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let TOKEN = localStorage.getItem("mgr_admin_token") || "";
+let orders = [];
+let menuItems = [];
+let curTab = "active";
+
+const STATUS_LABELS = {
+  none: "รอชำระ", received: "📋 รับแล้ว", preparing: "👨‍🍳 กำลังเตรียม",
+  delivering: "🛵 กำลังส่ง", delivered: "✅ ส่งแล้ว"
+};
+const STATE_LABELS = {
+  await_slip: "⏳ รอสลิป", slip_sent: "📸 รอยืนยัน", confirmed: "✅ ยืนยันแล้ว"
+};
+const CAT_LABELS = { food: "อาหาร", coffee: "กาแฟ", milk: "นม & ชา", soda: "โซดา" };
+
+function doLogin() {
+  TOKEN = document.getElementById("token-input").value.trim();
+  if (!TOKEN) return;
+  localStorage.setItem("mgr_admin_token", TOKEN);
+  startDashboard();
+}
+
+async function startDashboard() {
+  try {
+    const r = await api("/api/admin/orders");
+    if (r.error) throw new Error(r.error);
+    document.getElementById("login-page").style.display = "none";
+    document.getElementById("dashboard").style.display = "block";
+    document.getElementById("env-badge").textContent = location.port === "3000" ? "DEV" : "MAIN";
+    orders = r.orders || [];
+    renderOrders();
+    loadMenu();
+  } catch (e) {
+    showToast("Token ไม่ถูกต้อง", true);
+  }
+}
+
+async function api(url, opts) {
+  const sep = url.includes("?") ? "&" : "?";
+  const r = await fetch(url + sep + "token=" + TOKEN, opts);
+  return r.json();
+}
+
+async function loadOrders() {
+  const r = await api("/api/admin/orders");
+  orders = r.orders || [];
+  renderOrders();
+  showToast("รีเฟรชแล้ว");
+}
+
+function switchTab(tab) {
+  curTab = tab;
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tab));
+  document.getElementById("tab-active").style.display = tab === "active" ? "" : "none";
+  document.getElementById("tab-history").style.display = tab === "history" ? "" : "none";
+  document.getElementById("tab-menu").style.display = tab === "menu" ? "" : "none";
+  if (tab === "active" || tab === "history") renderOrders();
+}
+
+function renderOrders() {
+  const active = orders.filter(o => o.state !== "confirmed" || (o.orderStatus && o.orderStatus !== "delivered" && o.orderStatus !== "none"));
+  const history = orders.filter(o => !active.includes(o));
+
+  document.getElementById("count-active").textContent = active.length;
+  document.getElementById("tab-active").innerHTML = active.length
+    ? active.map(o => orderCard(o, true)).join("")
+    : '<div class="empty">ไม่มีออเดอร์ที่กำลังดำเนินการ</div>';
+  document.getElementById("tab-history").innerHTML = history.length
+    ? history.map(o => orderCard(o, false)).join("")
+    : '<div class="empty">ยังไม่มีประวัติ</div>';
+}
+
+function orderCard(o, showActions) {
+  const d = o.delivery || {};
+  const time = o.createdAt ? new Date(o.createdAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" }) : "";
+  const date = o.createdAt ? new Date(o.createdAt).toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok" }) : "";
+
+  let statusBadge = "";
+  if (o.state === "confirmed" || o.orderStatus !== "none") {
+    statusBadge = `<span class="oc-status s-${o.orderStatus}">${STATUS_LABELS[o.orderStatus] || o.orderStatus}</span>`;
+  } else {
+    statusBadge = `<span class="oc-status s-${o.state}">${STATE_LABELS[o.state] || o.state}</span>`;
+  }
+
+  let actions = "";
+  if (showActions && o.state === "confirmed") {
+    const cur = o.orderStatus || "received";
+    const all = ["received", "preparing", "delivering", "delivered"];
+    const idx = all.indexOf(cur);
+    const next = all.slice(idx + 1);
+    if (next.length) {
+      actions = `<div class="oc-actions">
+        <input type="number" class="eta-input" id="eta-${o.orderId}" placeholder="นาที" min="1" max="120">
+        <span class="eta-label">ETA</span>
+        ${next.map(s => `<button class="btn-${s}" onclick="updateStatus('${o.orderId}','${s}')">${STATUS_LABELS[s]}</button>`).join("")}
+      </div>`;
+    }
+  }
+
+  let slip = "";
+  if (o.slipUrl) {
+    slip = `<div class="oc-slip"><img src="${o.slipUrl}" alt="slip" onclick="showSlip('${o.slipUrl}')"></div>`;
+  }
+
+  return `<div class="order-card st-${o.orderStatus || 'none'}">
+    <div class="oc-top">
+      <span class="oc-id">#${o.orderId}</span>
+      <span class="oc-time">${date} ${time}</span>
+    </div>
+    ${statusBadge}
+    ${d.location ? `<div class="oc-delivery">📍 ${esc(d.location)} · ${esc(d.name || "")} · ${esc(d.phone || "")}</div>` : ""}
+    <div class="oc-summary">${esc(o.summary || "")}</div>
+    <div class="oc-total">💰 ${o.total}.-</div>
+    ${slip}
+    ${actions}
+  </div>`;
+}
+
+async function updateStatus(orderId, status) {
+  const etaEl = document.getElementById("eta-" + orderId);
+  const eta = etaEl ? parseInt(etaEl.value) || 0 : 0;
+  try {
+    const r = await api("/api/admin/status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId, status, eta })
+    });
+    if (r.error) throw new Error(r.error);
+    showToast(`อัปเดต #${orderId} → ${STATUS_LABELS[status]}`);
+    loadOrders();
+  } catch (e) { showToast(e.message, true); }
+}
+
+function showSlip(url) {
+  document.getElementById("slip-img").src = url;
+  document.getElementById("slip-modal").classList.add("show");
+}
+
+// ==================== Menu Management ====================
+
+async function loadMenu() {
+  const r = await api("/api/admin/menu");
+  menuItems = r.items || [];
+  renderMenu();
+}
+
+function renderMenu() {
+  const el = document.getElementById("tab-menu");
+  let html = `<button class="add-menu-btn" onclick="openMenuModal()">+ เพิ่มเมนูใหม่</button>`;
+  if (!menuItems.length) {
+    html += '<div class="empty">ยังไม่มีเมนูในฐานข้อมูล<br><small>เมนูจะใช้ค่า hardcoded จนกว่าจะเพิ่มเมนูใน DB</small></div>';
+  } else {
+    const grouped = {};
+    for (const item of menuItems) {
+      if (!grouped[item.cat]) grouped[item.cat] = [];
+      grouped[item.cat].push(item);
+    }
+    for (const [cat, items] of Object.entries(grouped)) {
+      html += `<h3 style="padding:8px 4px;font-size:15px;color:#5A4F00">${CAT_LABELS[cat] || cat}</h3>`;
+      for (const item of items) {
+        const priceText = Object.entries(item.price).map(([k,v]) => k === "default" ? `฿${v}` : `${k} ฿${v}`).join(" / ");
+        html += `<div class="menu-card ${item.enabled ? '' : 'disabled'}">
+          <div class="mc-left">
+            <div class="mc-name">${esc(item.nameTh)} <small style="color:#888">${esc(item.nameEn)}</small></div>
+            <div class="mc-price">${priceText}</div>
+          </div>
+          <div class="mc-actions">
+            <button class="btn-toggle-menu" onclick="toggleMenuItem(${item.id})">${item.enabled ? '🔒 ปิด' : '🔓 เปิด'}</button>
+            <button class="btn-edit-menu" onclick="editMenuItem(${item.id})">✏️</button>
+            <button class="btn-del-menu" onclick="deleteMenuItem(${item.id})">🗑</button>
+          </div>
+        </div>`;
+      }
+    }
+  }
+  el.innerHTML = html;
+}
+
+let editingMenuId = null;
+
+function openMenuModal(item) {
+  editingMenuId = item ? item.id : null;
+  document.getElementById("menu-modal-title").textContent = item ? "แก้ไขเมนู" : "เพิ่มเมนูใหม่";
+  document.getElementById("mf-id").value = item ? item.id : "";
+  document.getElementById("mf-id").disabled = !!item;
+  document.getElementById("mf-cat").value = item ? item.cat : "food";
+  document.getElementById("mf-nameTh").value = item ? item.nameTh : "";
+  document.getElementById("mf-nameEn").value = item ? item.nameEn : "";
+  document.getElementById("mf-price").value = item ? JSON.stringify(item.price) : '{"default":70}';
+  document.getElementById("mf-addons").value = item ? JSON.stringify(item.addons) : "[]";
+  document.getElementById("mf-level").value = item ? JSON.stringify(item.level) : "[]";
+  document.getElementById("mf-levelLabel").value = item ? item.levelLabel : "";
+  document.getElementById("mf-variantLabel").value = item ? item.variantLabel : "";
+  document.getElementById("mf-sortOrder").value = item ? item.sortOrder : 0;
+  document.getElementById("mf-enabled").value = item ? (item.enabled ? "1" : "0") : "1";
+  document.getElementById("menu-modal").classList.add("show");
+}
+
+function closeMenuModal() {
+  document.getElementById("menu-modal").classList.remove("show");
+}
+
+async function saveMenu() {
+  try {
+    const item = {
+      id: parseInt(document.getElementById("mf-id").value),
+      cat: document.getElementById("mf-cat").value,
+      nameTh: document.getElementById("mf-nameTh").value.trim(),
+      nameEn: document.getElementById("mf-nameEn").value.trim(),
+      price: JSON.parse(document.getElementById("mf-price").value),
+      addons: JSON.parse(document.getElementById("mf-addons").value || "[]"),
+      level: JSON.parse(document.getElementById("mf-level").value || "[]"),
+      levelLabel: document.getElementById("mf-levelLabel").value.trim(),
+      variantLabel: document.getElementById("mf-variantLabel").value.trim(),
+      sortOrder: parseInt(document.getElementById("mf-sortOrder").value) || 0,
+      enabled: document.getElementById("mf-enabled").value === "1",
+    };
+    if (!item.id || !item.nameTh) throw new Error("กรุณากรอก ID และชื่อ");
+    const r = await api("/api/admin/menu", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(item)
+    });
+    if (r.error) throw new Error(r.error);
+    closeMenuModal();
+    showToast("บันทึกเมนูแล้ว");
+    loadMenu();
+  } catch (e) { showToast(e.message, true); }
+}
+
+function editMenuItem(id) {
+  const item = menuItems.find(m => m.id === id);
+  if (item) openMenuModal(item);
+}
+
+async function deleteMenuItem(id) {
+  if (!confirm(`ลบเมนู #${id}?`)) return;
+  try {
+    const r = await api(`/api/admin/menu/${id}`, { method: "DELETE" });
+    if (r.error) throw new Error(r.error);
+    showToast("ลบเมนูแล้ว");
+    loadMenu();
+  } catch (e) { showToast(e.message, true); }
+}
+
+async function toggleMenuItem(id) {
+  const item = menuItems.find(m => m.id === id);
+  if (!item) return;
+  item.enabled = !item.enabled;
+  try {
+    const r = await api("/api/admin/menu", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(item)
+    });
+    if (r.error) throw new Error(r.error);
+    showToast(item.enabled ? "เปิดเมนูแล้ว" : "ปิดเมนูแล้ว");
+    loadMenu();
+  } catch (e) { showToast(e.message, true); }
+}
+
+// ==================== Utils ====================
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+function showToast(msg, err) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.className = "toast show" + (err ? " err" : "");
+  setTimeout(() => el.classList.remove("show"), 2500);
+}
+
+// Auto-refresh every 30s
+setInterval(() => { if (curTab === "active") loadOrders(); }, 30000);
+
+// Init
+if (TOKEN) startDashboard();
+
+// Check URL param
+const urlToken = new URLSearchParams(location.search).get("token");
+if (urlToken) { TOKEN = urlToken; localStorage.setItem("mgr_admin_token", urlToken); startDashboard(); }
+</script>
+</body>
+</html>
