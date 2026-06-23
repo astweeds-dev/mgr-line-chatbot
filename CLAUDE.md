@@ -6,7 +6,7 @@ LINE Chatbot for Merry.Go"Round STUDIO — food & drinks ordering, payment via P
 - Node.js + Express + @line/bot-sdk v9 + sharp
 - Vanilla HTML/CSS/JS frontend (single file: `public/order.html`)
 - Cloudflare Tunnel for dev, Railway for production deployment
-- No database — all state is in-memory (Maps), except orderCounter (persisted to `data/counter.{env}.json`)
+- SQLite (better-sqlite3) for persistence — orders + sessions in `data/mgr.{env}.db`; Maps act as in-memory cache, loaded on boot. orderCounter persisted to `data/counter.{env}.json`
 
 ## Project Structure
 ```
@@ -15,6 +15,8 @@ public/order.html          # Food ordering web UI (opened from LINE)
 images/mgr logo.jpg        # Store logo (note: filename has a space)
 images/qr-payment.jpg      # PromptPay QR code for payment
 images/slips/              # Customer payment slips (gitignored)
+db.js                      # SQLite persistence layer (orders + sessions)
+data/mgr.{env}.db          # SQLite database (gitignored — runtime state)
 data/counter.{env}.json    # Order counter persistence (survives restart)
 setup-rich-menu.js         # Creates 3-button Rich Menu (Food/Drinks/Contact)
 update-webhook.js          # Sets LINE webhook URL
@@ -84,8 +86,8 @@ GET  /api/order-status — resume order page (oid, slipToken)
 Token comes from URL param `?t={token}` (30-min TTL, created by bot when user taps Food).
 
 ## Remaining work / known issues
-- **No database**: orders, sessions in-memory — lost on restart (counter persists via file)
-- **Production deployment**: Railway config exists (`railway.json`, `Procfile`) but not yet deployed — still running production from local machine via Cloudflare Tunnel
+- **Production deployment**: Railway config exists (`railway.json`, `Procfile`) but not yet deployed — still running production from local machine via Cloudflare Tunnel. ⚠️ If moving to Railway, SQLite needs a persistent volume or the `.db` is wiped on each redeploy
+- **Cancel/reject flow**: not yet tested end-to-end (admin reject, cancel-after-confirm, re-upload slip)
 - **PROJECT-DNA.md**: full project context file exists for use in Claude Chat conversations
 
 ## Commands
