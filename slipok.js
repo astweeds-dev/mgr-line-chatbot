@@ -4,11 +4,17 @@
 // - เทียบยอดเงินกับยอดออเดอร์เอง (ไม่เชื่อรูปสลิป)
 // ถ้าไม่ได้ตั้งค่า SLIPOK_* → คืน status "disabled" → ระบบ fallback ไปใช้แอดมินยืนยันเอง
 
-const BRANCH_ID = process.env.SLIPOK_BRANCH_ID;
-const API_KEY = process.env.SLIPOK_API_KEY;
+// อ่าน env แบบ lazy ตอนเรียกใช้ — กันปัญหา require ก่อน dotenv.config() จะรัน
+function getConfig() {
+  return {
+    branchId: process.env.SLIPOK_BRANCH_ID,
+    apiKey: process.env.SLIPOK_API_KEY,
+  };
+}
 
 function isConfigured() {
-  return Boolean(BRANCH_ID && API_KEY);
+  const { branchId, apiKey } = getConfig();
+  return Boolean(branchId && apiKey);
 }
 
 // ตรวจสลิปจาก buffer รูป + ยอดที่คาดหวัง
@@ -20,17 +26,18 @@ function isConfigured() {
 //   error         — เน็ต/ระบบ SlipOK ล่ม → caller ควร fallback เป็น manual
 //   disabled      — ยังไม่ได้ตั้งค่า → caller ใช้ manual
 async function verifySlip(buffer, expectedAmount) {
-  if (!isConfigured()) return { status: "disabled" };
+  const { branchId, apiKey } = getConfig();
+  if (!branchId || !apiKey) return { status: "disabled" };
   try {
     const form = new FormData();
     form.append("files", new Blob([buffer], { type: "image/jpeg" }), "slip.jpg");
     form.append("log", "true"); // เปิดเช็คบัญชีปลายทาง + กันสลิปซ้ำ
 
     const resp = await fetch(
-      `https://api.slipok.com/api/line/apikey/${BRANCH_ID}`,
+      `https://api.slipok.com/api/line/apikey/${branchId}`,
       {
         method: "POST",
-        headers: { "x-authorization": API_KEY },
+        headers: { "x-authorization": apiKey },
         body: form,
         signal: AbortSignal.timeout(15000),
       }
