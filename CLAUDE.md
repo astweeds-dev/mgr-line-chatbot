@@ -1,12 +1,12 @@
 # MGR LINE Chatbot
 
-LINE Chatbot for Merry.Go"Round STUDIO — food ordering (rice dishes), payment via PromptPay QR, admin confirmation flow.
+LINE Chatbot for Merry.Go"Round STUDIO — food & drinks ordering, payment via PromptPay QR, admin confirmation flow.
 
 ## Tech Stack
 - Node.js + Express + @line/bot-sdk v9 + sharp
 - Vanilla HTML/CSS/JS frontend (single file: `public/order.html`)
 - Cloudflare Tunnel for dev, Railway for production deployment
-- No database — all state is in-memory (Maps)
+- No database — all state is in-memory (Maps), except orderCounter (persisted to `data/counter.{env}.json`)
 
 ## Project Structure
 ```
@@ -15,6 +15,7 @@ public/order.html          # Food ordering web UI (opened from LINE)
 images/mgr logo.jpg        # Store logo (note: filename has a space)
 images/qr-payment.jpg      # PromptPay QR code for payment
 images/slips/              # Customer payment slips (gitignored)
+data/counter.{env}.json    # Order counter persistence (survives restart)
 setup-rich-menu.js         # Creates 3-button Rich Menu (Food/Drinks/Contact)
 update-webhook.js          # Sets LINE webhook URL
 start-all.bat              # Production: server + tunnel + webhook
@@ -46,8 +47,8 @@ node -e "require('dotenv').config({path:'.env.development'}); require('./setup-r
 - "Use webhook" must be **enabled**
 - "Auto-reply messages" must be **disabled**
 
-## order.html Redesign (in progress, 2026-06-21)
-Redesigned from scratch with GrabFood/LINE MAN style UX:
+## order.html (complete, 2026-06-22)
+GrabFood/LINE MAN style ordering UI — bilingual (Thai/English).
 
 ### Design
 - Brand: "Merry.Go"Round STUDIO"
@@ -55,34 +56,35 @@ Redesigned from scratch with GrabFood/LINE MAN style UX:
 - Font: Google Fonts Sarabun
 - Logo: `/images/mgr%20logo.jpg` (space in filename, URL-encoded)
 
-### Views (4 screens in single page)
-1. **Menu** — Hero + category filter pills (ทั้งหมด/ผัด/แกง/ไข่/พิเศษ) + menu cards + floating cart bar
-2. **Cart** — Item list with +/- qty + extras pills (ช้อนส้อม/พริกน้ำปลา/ซอส) + confirm button
-3. **Payment** — 4-step progress bar + QR PromptPay + order summary + cancel button
-4. **Success** — Logo + order ID + summary + ETA
+### Views (5 screens in single page)
+1. **Start** — Delivery location picker + customer name & phone
+2. **Menu** — Category filter pills (อาหาร/กาแฟ/นม&ชา/โซดา) + menu cards + floating cart bar
+3. **Cart** — Item list with +/- qty + extras pills (ช้อนส้อม/พริกน้ำปลา/ซอส) + confirm button
+4. **Payment** — 4-step progress bar + QR PromptPay + order summary + slip upload + cancel button
+5. **Success** — Logo + order ID + summary + ETA
 
-### Cart key system (supports same dish, different meat)
-Cart uses composite keys: `"3-หมู"`, `"3-เนื้อ"` for meat-option items, plain `"1"` for no-option items.
-This allows ordering e.g. "กะเพรา หมู x2" AND "กะเพรา เนื้อ x1" as separate line items.
+### Menu categories & items
+| Category | IDs | Variants | Add-ons |
+|----------|-----|----------|---------|
+| อาหารตามสั่ง (food) | 1, 3-15 | หมู/เนื้อ (some default-only) | ไข่ดาว/ไข่เจียว/พิเศษ (item 1: หมูสับ/พิเศษ) |
+| กาแฟ (coffee) | 20-24 | คั่วอ่อน/คั่วเข้ม | น้ำผึ้ง/คาราเมลไซรัป/นมโอ๊ต/เพิ่มช็อต |
+| นม & ชา (milk) | 30-35 | default only | น้ำผึ้ง/คาราเมลไซรัป |
+| โซดาอิตาเลียน (soda) | 40-48 | default only | none |
 
-### Menu data structure
-```js
-{ id, name, cat: "ผัด"|"แกง"|"ไข่"|"พิเศษ", price: { default: N } | { หมู: N, เนื้อ: N } }
-```
-- Items with `price.default` have no meat choice
-- Items with `price.หมู/เนื้อ` show meat toggle pills
+### Cart key system
+Composite keys: `"3-หมู"`, `"21-คั่วอ่อน:น้ำผึ้ง,เพิ่มช็อต"`, plain `"40"` for no-option items.
+Server uses `parseCartKey()` + `calcUnitPrice()` to recompute prices (never trusts client total).
 
 ### API contract (order.html → app.js)
 ```
-POST /api/order
-Body: { token, items: [{name, type, qty, unitPrice, totalPrice, price}], addons: [...], total }
+POST /api/order     — submit order (token, items with keys, delivery info)
+POST /api/slip      — upload payment slip (base64 image, orderId, slipToken)
+GET  /api/order-status — resume order page (oid, slipToken)
 ```
 Token comes from URL param `?t={token}` (30-min TTL, created by bot when user taps Food).
 
 ## Remaining work / known issues
-- **Drinks menu**: placeholder only ("กำลังจะมาเร็วๆ นี้") — needs full implementation
-- **No database**: orders, sessions, counter all in-memory — lost on restart
-- **order.html UX**: user is reviewing and adjusting screen-by-screen (session ongoing)
+- **No database**: orders, sessions in-memory — lost on restart (counter persists via file)
 - **Production deployment**: Railway config exists (`railway.json`, `Procfile`) but not yet deployed — still running production from local machine via Cloudflare Tunnel
 - **PROJECT-DNA.md**: full project context file exists for use in Claude Chat conversations
 
