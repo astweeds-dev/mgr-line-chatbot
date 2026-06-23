@@ -33,9 +33,10 @@ const DELIVERY_LOCATIONS = [
 ];
 
 // เวลาเปิด-ปิดแต่ละหมวด (ชั่วโมง, 24h)
+// TODO: เปลี่ยนกลับหลังทดสอบ → food: 16-24, drinks: 10-24
 const BUSINESS_HOURS = {
-  food:   { open: 16, close: 24, label: "16:00 - 23:59" },
-  drinks: { open: 10, close: 24, label: "10:00 - 23:59" },
+  food:   { open: 0, close: 24, label: "00:00 - 23:59" },
+  drinks: { open: 0, close: 24, label: "00:00 - 23:59" },
 };
 
 function isSectionOpen(section) {
@@ -703,7 +704,10 @@ async function handleText(replyToken, userId, text) {
     }
 
     const token = createToken(userId);
-    const orderUrl = `${getBaseUrl()}/order.html?t=${token}`;
+    const liffId = process.env.LIFF_ID;
+    const orderUrl = liffId
+      ? `https://liff.line.me/${liffId}?t=${token}`
+      : `${getBaseUrl()}/order.html?t=${token}`;
 
     const subtitle = foodOpen && drinkOpen
       ? "อาหารตามสั่ง · กาแฟ · นม · โซดา"

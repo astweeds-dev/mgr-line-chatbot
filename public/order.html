@@ -6,6 +6,7 @@
 <title>Merry Go Round Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js" charset="utf-8"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Sarabun',sans-serif;background:#FFFEF5;color:#333;-webkit-tap-highlight-color:transparent}
@@ -342,9 +343,10 @@ function L(x) { return x && typeof x === "object" ? (x[lang] || x.th || x.en) : 
 function disp(map, v) { return (map[v] && map[v][lang]) || v; }                            // ค่าไทย → แสดงตามภาษา
 
 // เวลาเปิด-ปิด (ต้องตรงกับ BUSINESS_HOURS ใน app.js)
+// TODO: เปลี่ยนกลับหลังทดสอบ → food: 16-24, drinks: 10-24
 const BIZ_HOURS = {
-  food:   { open: 16, close: 24, label: { th: "16:00 - 23:59", en: "4:00 PM - 11:59 PM" } },
-  drinks: { open: 10, close: 24, label: { th: "10:00 - 23:59", en: "10:00 AM - 11:59 PM" } },
+  food:   { open: 0, close: 24, label: { th: "00:00 - 23:59", en: "12:00 AM - 11:59 PM" } },
+  drinks: { open: 0, close: 24, label: { th: "00:00 - 23:59", en: "12:00 AM - 11:59 PM" } },
 };
 function catSection(catId) { return catId === "food" ? "food" : "drinks"; }
 function isSectionOpen(sec) {
@@ -493,7 +495,16 @@ const I18N = {
 };
 function t(k) { return (I18N[lang] && I18N[lang][k]) || I18N.th[k] || k; }
 
-const TOKEN = new URLSearchParams(location.search).get("t");
+// LIFF ส่ง query params ผ่าน liff.state — decode กลับมาเป็น ?t=xxx
+function extractParams() {
+  const sp = new URLSearchParams(location.search);
+  const ls = sp.get("liff.state");
+  if (ls) { const lp = new URLSearchParams(ls.replace(/^[/?#]+/, "")); for (const [k,v] of lp) sp.set(k, v); }
+  if (location.hash) { const hp = new URLSearchParams(location.hash.slice(1)); const hs = hp.get("liff.state"); if (hs) { const lp2 = new URLSearchParams(hs.replace(/^[/?#]+/, "")); for (const [k,v] of lp2) sp.set(k, v); } }
+  return sp;
+}
+const _params = extractParams();
+const TOKEN = _params.get("t");
 
 let delivery = { location: null, name: "", phone: "" };
 // ตะกร้า = array ของบรรทัดสินค้า (รองรับโน้ต/ความหวานต่อแก้ว) แต่ละบรรทัดมี uid
@@ -1082,6 +1093,7 @@ async function uploadSlip(dataUrl) {
 
 // ==================== SUCCESS ====================
 function closePage() {
+  try { if (liff.isInClient()) { liff.closeWindow(); return; } } catch {}
   try { window.close(); } catch {}
   setTimeout(() => { location.href = "https://line.me/R/"; }, 300);
 }
@@ -1170,14 +1182,15 @@ function setLang(l) {
 function toggleLang() { setLang(lang === "th" ? "en" : "th"); }
 
 // ==================== INIT ====================
+try { liff.init({ liffId: new URLSearchParams(location.search).get("liffId") || "" }).catch(() => {}); } catch {}
 updateLangBtn();
 applyStaticText();
-const resumeOid = new URLSearchParams(location.search).get("oid");
-const resumeS = new URLSearchParams(location.search).get("s");
+const resumeOid = _params.get("oid");
+const resumeS = _params.get("s");
 if (resumeOid && resumeS) {
   resumeOrder(resumeOid, resumeS);
 } else {
-  renderLocations();   // หน้าแรก = เลือกจุดจัดส่ง + กรอกชื่อ/เบอร์ (v-start active อยู่แล้ว)
+  renderLocations();
 }
 </script>
 </body>
