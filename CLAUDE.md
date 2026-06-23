@@ -124,9 +124,13 @@ Node.js process that manages the entire production stack:
 - Secrets in `.env` (gitignored)
 - Cloudflare Tunnel (no exposed ports)
 
-## Remaining work / known issues
-- **Named Tunnel**: `setup-named-tunnel.bat` prepared — requires a domain on Cloudflare (~350 baht/year). Gives fixed URL, no session breaks on tunnel restart
-- **PROJECT-DNA.md**: full project context file exists for use in Claude Chat conversations
+## Status
+Project is **feature-complete** — food & drinks ordering, payment, slip verification, watchdog, and auto-start are all working.
+
+**Optional future upgrades** (not blocking):
+- Named Tunnel (fixed URL, requires Cloudflare domain ~350 baht/year) — `setup-named-tunnel.bat` ready
+- Admin dashboard / order history
+- Menu management UI (currently hardcoded)
 
 ## Commands
 ```bash

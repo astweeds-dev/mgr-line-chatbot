@@ -1,84 +1,107 @@
 # MGR LINE Chatbot - Project DNA
 
 ## Overview
-LINE Chatbot สำหรับร้าน MGR สั่งอาหาร/กาแฟ รันบน Node.js + Express เชื่อมต่อ LINE Messaging API ผ่าน Cloudflare Tunnel (dev) หรือ Railway (production)
+LINE Chatbot สำหรับร้าน Merry.Go"Round STUDIO — สั่งอาหาร/เครื่องดื่ม, ชำระเงินผ่าน PromptPay QR, ตรวจสลิปอัตโนมัติ (SlipOK), แอดมินยืนยัน/ปฏิเสธ
+รันบน Node.js + Express เชื่อมต่อ LINE Messaging API ผ่าน Cloudflare Tunnel (Quick Tunnel)
 
 ## Tech Stack
 - **Runtime**: Node.js
 - **Framework**: Express
 - **LINE SDK**: @line/bot-sdk v9 (MessagingApiClient, MessagingApiBlobClient)
-- **Image processing**: sharp (สร้าง Rich Menu image)
-- **Dev**: nodemon
-- **Tunnel**: Cloudflare Tunnel (cloudflared) สำหรับ dev ให้ LINE webhook เข้าถึง localhost ได้
-- **Deployment target**: Railway (มี railway.json + Procfile อยู่แล้ว)
+- **Database**: SQLite (better-sqlite3) — orders + sessions persist across restarts
+- **Image processing**: sharp (Rich Menu image generation + slip compression)
+- **Slip verification**: SlipOK API (optional, auto-confirm if configured)
+- **Dev**: nodemon, puppeteer (Rich Menu image generation)
+- **Tunnel**: Cloudflare Tunnel (cloudflared) — Quick Tunnel (random URL, auto-extracted)
 
 ## Project Structure
 ```
 mgr-line-chatbot/
-├── app.js                    # Main server - Express + LINE webhook handler
+├── app.js                     # Main server — Express + LINE webhook + order API + rate limiter
+├── db.js                      # SQLite persistence layer (orders + sessions)
+├── slipok.js                  # SlipOK slip verification (optional, auto-confirm)
+├── watchdog.js                # Production watchdog — server+tunnel lifecycle, health check, LINE alerts
 ├── package.json
-├── .env                      # Production credentials (gitignored)
-├── .env.development          # Dev credentials (gitignored)
+├── .env                       # Production credentials (gitignored)
+├── .env.development           # Dev credentials (gitignored)
 ├── public/
-│   └── order.html            # หน้าเว็บสั่งอาหาร (LIFF-like, เปิดจาก LINE)
+│   └── order.html             # Ordering web UI — bilingual (Thai/English), GrabFood-style
 ├── images/
-│   ├── qr-payment.jpg        # QR Code PromptPay สำหรับชำระเงิน
-│   └── slips/                # เก็บรูปสลิปที่ลูกค้าส่ง (gitignored)
-├── setup-rich-menu.js        # สร้าง Rich Menu (3 ปุ่ม: Food, Drinks, Contact)
-├── create-rich-menu.js       # อีกเวอร์ชันของ rich menu setup
-├── generate-rich-menu-image.js
-├── update-webhook.js         # อัพเดท LINE webhook URL อัตโนมัติ
-├── start-all.bat             # รัน production (server + tunnel + webhook update)
-├── start-dev.bat             # รัน dev mode (ใช้ .env.development)
-├── monitor.bat               # Health check monitor
-├── railway.json              # Railway deployment config
-└── Procfile                  # Railway start command
+│   ├── mgr logo.jpg           # Store logo (space in filename → URL-encode)
+│   ├── qr-payment.jpg         # QR Code PromptPay
+│   └── slips/                 # Customer payment slips (gitignored)
+├── data/
+│   ├── mgr.{env}.db           # SQLite database (gitignored — runtime state)
+│   ├── counter.{env}.json     # Order counter persistence
+│   └── watchdog.log           # Watchdog event log (auto-rotated at 5MB)
+├── setup-rich-menu.js         # Creates 3-button Rich Menu (Food/Drinks/Contact)
+├── create-rich-menu.js        # Alternative rich menu setup
+├── generate-rich-menu-image.js # Generates rich menu button image via sharp
+├── update-webhook.js          # Sets LINE webhook URL
+├── start-all.bat              # Production: runs watchdog.js (auto-restart loop)
+├── start-dev.bat              # Dev: server + tunnel + webhook (no watchdog)
+├── setup-autostart.bat        # Creates Windows Task Scheduler task for auto-start on boot
+├── setup-named-tunnel.bat     # Interactive: Cloudflare Named Tunnel setup (fixed URL, requires domain)
+├── railway.json               # Railway deployment config (not actively used)
+└── Procfile                   # Railway start command (not actively used)
 ```
 
 ## Environment Variables
 ```
 PORT=3000
-CHANNEL_SECRET=xxx          # LINE Channel Secret
-CHANNEL_ACCESS_TOKEN=xxx    # LINE Channel Access Token (long-lived)
-ADMIN_USER_ID=xxx           # LINE User ID ของแอดมิน (รับแจ้งออเดอร์)
-BASE_URL=https://xxx        # Public URL (tunnel URL หรือ Railway URL)
+CHANNEL_SECRET=xxx             # LINE Channel Secret
+CHANNEL_ACCESS_TOKEN=xxx       # LINE Channel Access Token (long-lived)
+ADMIN_USER_ID=xxx              # LINE User ID ของแอดมิน (รับแจ้งออเดอร์)
+BASE_URL=https://xxx           # Public URL (tunnel URL)
+
+# Optional — SlipOK auto-verification
+SLIPOK_BRANCH_ID=xxx           # SlipOK branch ID
+SLIPOK_API_KEY=xxx             # SlipOK API key
+
+# Optional — Named Tunnel (fixed URL)
+TUNNEL_NAME=xxx                # Cloudflare tunnel name
+TUNNEL_HOSTNAME=xxx            # e.g. mgr.example.com
 ```
 
 ## Environment Separation
-- `NODE_ENV=production` (default) → โหลด `.env`
-- `NODE_ENV=development` → โหลด `.env.development`
-- Dev ใช้ LINE Channel แยกจาก Production เพื่อไม่กระทบลูกค้า
-- app.js บรรทัดแรกเลือก env file อัตโนมัติ
+- `NODE_ENV=production` (default) → loads `.env`, uses `data/mgr.production.db`
+- `NODE_ENV=development` → loads `.env.development`, uses `data/mgr.development.db`
+- Dev uses a separate LINE Channel from Production to avoid affecting customers
+- app.js auto-selects env file on startup
 
 ## How It Works (Order Flow)
 
 ### 1. ลูกค้ากดสั่งอาหาร
-- ลูกค้ากดปุ่ม "Food" ที่ Rich Menu → bot ส่งข้อความ "อาหาร"
-- handleText() สร้าง token (crypto.randomBytes, TTL 30 นาที)
+- ลูกค้ากดปุ่ม "Food" หรือ "Drinks" ที่ Rich Menu → bot สร้าง token (crypto.randomBytes, TTL 30 นาที)
 - ส่ง Flex Message มีปุ่ม URI → เปิด `order.html?t={token}`
 
 ### 2. ลูกค้าเลือกเมนูในเว็บ
-- order.html แสดงเมนูอาหาร 15 รายการ (ข้าวราดต่างๆ)
-- เลือกหมู/เนื้อ, จำนวน, ของเพิ่ม (ช้อนส้อม/พริกน้ำปลา/ซอส)
+- order.html — GrabFood/LINE MAN style UI, bilingual (Thai/English)
+- 5 screens in single page: Start → Menu → Cart → Payment → Success
+- เลือกจุดจัดส่ง (ห้องซ้อมเล็ก/ใหญ่/สตูดิโอ/ลานหน้ามินิบาร์) + ชื่อ/เบอร์
+- เลือกเมนู 4 หมวด: อาหาร/กาแฟ/นม&ชา/โซดาอิตาเลียน + ของเพิ่ม
 - กด "ยืนยันออเดอร์" → POST /api/order พร้อม token
 
 ### 3. Server รับออเดอร์
-- ตรวจ token validity
-- สร้าง orderId (MGR0001, MGR0002, ...)
-- เก็บใน pendingOrders Map (in-memory)
-- push Flex Message ให้ลูกค้า → แสดง QR PromptPay + สรุปออเดอร์
+- ตรวจ token validity + server-side price validation (never trusts client total)
+- สร้าง orderId (MGR0001, MGR0002, ...) — counter persisted to file
+- บันทึกใน SQLite + in-memory cache
+- push Flex Message ให้ลูกค้า → QR PromptPay + สรุปออเดอร์
 - push แจ้ง Admin → ออเดอร์ใหม่
 - Session state → "await_slip"
 
-### 4. ลูกค้าส่งสลิป
-- handleImage() รับรูปสลิปผ่าน LINE Blob API
-- บันทึกไฟล์ที่ images/slips/{orderId}.jpg
-- push Flex Message ให้ Admin → แสดงสลิป + ปุ่ม "ยืนยัน" / "ปฏิเสธ"
+### 4. ลูกค้าส่งสลิป (2 ช่องทาง)
+- **ผ่าน LINE chat**: handleImage() รับรูปสลิปผ่าน LINE Blob API
+- **ผ่านหน้าเว็บ**: POST /api/slip (base64 image upload)
+- สลิปถูกบีบอัด (sharp: max 1500px, JPEG 80%) → บันทึกที่ images/slips/
+- **ถ้ามี SlipOK**: ตรวจสลิปอัตโนมัติ → ผ่านก็ auto-confirm, ไม่ผ่านก็แจ้งลูกค้าส่งใหม่
+- **ถ้าไม่มี SlipOK**: push Flex Message ให้ Admin → แสดงสลิป + ปุ่ม "ยืนยัน" / "ปฏิเสธ"
 - Session state → "await_confirm"
 
 ### 5. Admin ยืนยัน/ปฏิเสธ
 - admin_confirm → แจ้งลูกค้า "ชำระเรียบร้อย กำลังเตรียมอาหาร"
-- admin_reject → แจ้งลูกค้า "สลิปไม่ผ่าน กรุณาส่งใหม่"
+- admin_reject → แจ้งลูกค้า "สลิปไม่ผ่าน กรุณาส่งใหม่" (state กลับไป await_slip)
+- admin_cancel → ยกเลิกออเดอร์ + แจ้งลูกค้า
 
 ## Session States
 ```
@@ -88,19 +111,24 @@ idle → (สั่งอาหาร) → await_slip → (ส่งสลิป
 ```
 
 ## Data Storage
-- **In-memory** ทั้งหมด (Map objects) — ไม่มี database
+- **SQLite** (`data/mgr.{env}.db`) — orders + sessions persisted, survive restarts
+- **In-memory Maps** — loaded from SQLite on boot, act as cache
   - `sessions`: Map<userId, {state, orderId}>
-  - `pendingOrders`: Map<orderId, {userId, summary, total, state, slipUrl}>
+  - `pendingOrders`: Map<orderId, {userId, summary, total, state, slipUrl, delivery, ...}>
   - `orderTokens`: Map<token, {userId, createdAt}> — TTL 30 min, cleanup ทุก 5 min
-  - `orderCounter`: running number (reset เมื่อ restart server)
+  - `orderCounter`: persisted to `data/counter.{env}.json`
 
-## Menu Data (hardcoded in order.html)
-```
-ไข่เจียว 50, ไข่เจียวหมูสับ 60
-ผัดกะเพรา/น้ำมันหอย/เต้าเจี้ยว/พริกเผา/พริกแกง/กระเทียม: หมู 70 เนื้อ 80
-พะแนง/พริกแกงใต้/พริกเกลือ: หมู 80 เนื้อ 90
-ผัดไข่เค็ม/เขียวหวาน/หมูสับไข่ระเบิด/ผัดผงกะหรี่: หมู 90 เนื้อ 100
-```
+## Menu Data (hardcoded in order.html + MENU_PRICES in app.js)
+
+| Category | IDs | Variants | Add-ons | Price range |
+|----------|-----|----------|---------|-------------|
+| อาหารตามสั่ง (food) | 1, 3-15 | หมู/เนื้อ (some default-only) | ไข่ดาว 15 / ไข่เจียว 20 / พิเศษ 20 (item 1: หมูสับ 10 / พิเศษ 20) | 50-100 ฿ |
+| กาแฟ (coffee) | 20-24 | คั่วอ่อน/คั่วเข้ม | น้ำผึ้ง 10 / คาราเมลไซรัป 10 / นมโอ๊ต 20 / เพิ่มช็อต 20 | 70-80 ฿ |
+| นม & ชา (milk) | 30-35 | default only | น้ำผึ้ง 10 / คาราเมลไซรัป 10 | 70 ฿ |
+| โซดาอิตาเลียน (soda) | 40-48 | default only | none | 70 ฿ |
+
+Cart key format: `"3-หมู"`, `"21-คั่วอ่อน:น้ำผึ้ง,เพิ่มช็อต"`, plain `"40"` for no-option items.
+Server uses `parseCartKey()` + `calcUnitPrice()` to recompute prices server-side.
 
 ## Rich Menu (3 ปุ่ม)
 | ปุ่ม | สี | Action | ข้อความ |
@@ -109,42 +137,51 @@ idle → (สั่งอาหาร) → await_slip → (ส่งสลิป
 | Drinks & Coffee | #6F4E37 (น้ำตาล) | message | "เครื่องดื่มและกาแฟ" |
 | Contact | #2196F3 (น้ำเงิน) | message | "ติดต่อเจ้าหน้าที่" |
 
-## LINE Flex Messages ที่ใช้
-1. **เปิดเมนูอาหาร** - Bubble มีปุ่ม URI ไปหน้า order.html
-2. **ชำระเงิน** - Bubble มี QR Code + สรุปออเดอร์ + ปุ่มยกเลิก
-3. **สลิปแจ้ง Admin** - Bubble มีรูปสลิป + สรุป + ปุ่มยืนยัน/ปฏิเสธ
-4. **ยืนยันแล้ว (Admin view)** - Bubble สรุป + ปุ่มยกเลิก/คืนเงิน
-
 ## API Endpoints
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | / | Health text |
-| GET | /health | Health JSON |
-| POST | /webhook | LINE webhook (มี signature verification middleware) |
-| POST | /api/order | รับออเดอร์จากเว็บ (ต้องมี token) |
-| GET | /images/* | Static files (QR, slips) |
-| GET | /order.html | หน้าสั่งอาหาร |
+| Method | Path | Rate limit | Description |
+|--------|------|-----------|-------------|
+| GET | / | — | Health text |
+| GET | /health | — | Health JSON (`{ status, uptime }`) |
+| POST | /webhook | — | LINE webhook (signature verification middleware) |
+| POST | /api/order | 60/min/IP | Submit order (token + items + delivery info) |
+| POST | /api/slip | 10/min/IP | Upload payment slip (base64 image) |
+| GET | /api/order-status | 60/min/IP | Resume order page (oid + slipToken) |
+| GET | /images/* | — | Static files (QR, logo, slips) |
+| GET | /* (public/) | — | Static files (order.html) |
+
+## Security
+- **Rate limiting**: API 60 req/min/IP, slip upload 10 req/min/IP
+- LINE webhook signature verification (built-in via @line/bot-sdk middleware)
+- Server-side price validation (never trusts client total)
+- Token-based web page access (30-min TTL, no message spam)
+- Slip image compression + size limit (15MB max upload)
+- Secrets in `.env` (gitignored)
+- Cloudflare Tunnel (no exposed ports)
+
+## Production Watchdog (`watchdog.js`)
+- Starts & manages server (`node app.js`) + Cloudflare Tunnel as child processes
+- Auto-extracts tunnel URL → updates `.env` BASE_URL → restarts server → updates LINE webhook
+- Health monitoring every 30 seconds via `/health` endpoint
+- Auto-restart crashed server or tunnel immediately
+- LINE alerts to admin: system up, server down, tunnel down, recovered, shutdown
+- Log rotation: writes to `data/watchdog.log`, rotates at 5MB
+- Graceful shutdown: Ctrl+C sends alert → kills children → exits
+- `start-all.bat` wraps watchdog.js in a restart loop (if watchdog itself crashes)
+- `setup-autostart.bat` creates Windows Task Scheduler task → system starts on boot
 
 ## Running
 ```bash
 # Production (ลูกค้าใช้)
-start-all.bat           # เปิด server + tunnel + อัพเดท webhook
+start-all.bat              # watchdog.js (auto-restart + LINE alerts + tunnel)
 
 # Development (ทดสอบ ไม่กระทบลูกค้า)
-start-dev.bat           # เหมือน start-all แต่ใช้ .env.development
-npm run dev             # nodemon + .env.development (ไม่มี tunnel)
+start-dev.bat              # server + tunnel + webhook (ใช้ .env.development)
+npm run dev                # nodemon + .env.development (ไม่มี tunnel)
 ```
 
-## Pending / Future Features
-- เมนูเครื่องดื่ม/กาแฟ (ยังเป็น placeholder: "กำลังจะมาเร็วๆ นี้")
-- ยังไม่มี database (ข้อมูลหายเมื่อ restart)
-- ยังไม่มี order history / dashboard
-
-## Brand Colors
-- Primary: #E85D3A (ส้มแดง)
-- Success: #27AE60 (เขียว)
-- Coffee: #6F4E37 (น้ำตาล)
-- Info: #2196F3 (น้ำเงิน)
-
-## LINE OA
-- LINE OA ID: @616molde
+## Brand
+- **Name**: Merry.Go"Round STUDIO
+- **LINE OA**: @616molde
+- **Colors**: cream bg #FFFEF5, yellow accent #F9E84A, text-on-yellow #5A4F00, success #27AE60
+- **Font**: Google Fonts Sarabun
+- **Logo**: `/images/mgr%20logo.jpg` (space in filename, URL-encoded)
