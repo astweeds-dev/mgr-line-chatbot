@@ -350,10 +350,12 @@ async function main() {
   }
 
   const healthy = await checkHealth();
+  const adminUrl = tunnelUrl ? `\n\n📊 แดชบอร์ดพนักงาน:\n${tunnelUrl}/admin.html` : "";
   await sendAlert(
     `🟢 ระบบ MGR เปิดทำงานแล้ว\n` +
       `${healthy ? "✅" : "⚠️"} Server: ${healthy ? "OK" : "starting..."}\n` +
-      (tunnelUrl ? `🔗 ${tunnelUrl}` : "⚠️ Tunnel: waiting...")
+      (tunnelUrl ? `🔗 ${tunnelUrl}` : "⚠️ Tunnel: waiting...") +
+      adminUrl
   );
 
   log(`Monitoring started (every ${CHECK_INTERVAL / 1000}s)`);

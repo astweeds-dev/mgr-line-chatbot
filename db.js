@@ -68,8 +68,10 @@ const stmtUpsertOrder = db.prepare(`
     orderStatus=@orderStatus, statusEta=@statusEta, statusAt=@statusAt
 `);
 const stmtDeleteOrder = db.prepare(`DELETE FROM orders WHERE orderId = ?`);
+// โหลด confirmed ที่ยังไม่ delivered ด้วย — ให้อัปเดตสถานะหลัง restart ได้
 const stmtLoadActiveOrders = db.prepare(
-  `SELECT * FROM orders WHERE state IN (${ACTIVE_STATES.map(() => "?").join(",")})`
+  `SELECT * FROM orders WHERE state IN (${ACTIVE_STATES.map(() => "?").join(",")})
+     OR (state = 'confirmed' AND IFNULL(orderStatus,'') != 'delivered')`
 );
 
 const stmtUpsertSession = db.prepare(`

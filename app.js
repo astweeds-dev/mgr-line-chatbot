@@ -245,6 +245,10 @@ const ORDER_STATUS_EMOJI = { received: "📋", preparing: "👨‍🍳", deliver
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || crypto.randomBytes(16).toString("hex");
 if (!process.env.ADMIN_TOKEN) console.log(`[ADMIN] generated token: ${ADMIN_TOKEN}`);
 
+// PIN คงที่จาก env ให้พนักงาน login (เว้นว่าง = ปิด PIN, ใช้ token อย่างเดียว)
+const ADMIN_PIN = (process.env.ADMIN_PIN || "").trim();
+if (ADMIN_PIN) console.log(`[ADMIN] PIN login enabled`);
+
 // ==================== Rate Limiter ====================
 
 function createLimiter(windowMs, max) {
@@ -301,7 +305,7 @@ if (NODE_ENV === "development") {
 
 function requireAdmin(req, res, next) {
   const t = req.query.token || req.headers["x-admin-token"];
-  if (t !== ADMIN_TOKEN) return res.status(401).json({ error: "Unauthorized" });
+  if (t !== ADMIN_TOKEN && !(ADMIN_PIN && t === ADMIN_PIN)) return res.status(401).json({ error: "Unauthorized" });
   next();
 }
 
@@ -357,6 +361,18 @@ app.post("/api/admin/status", requireAdmin, express.json(), async (req, res) => 
   client.pushMessage({ to: order.userId, messages: [{ type: "text", text }] }).catch(e => console.error("Status push error:", e.message));
 });
 
+// ยืนยันการชำระเงินจากแดชบอร์ด (พนักงานกดเอง) — mirror ของปุ่ม admin_confirm ใน LINE
+app.post("/api/admin/confirm", requireAdmin, express.json(), (req, res) => {
+  const { orderId } = req.body;
+  const order = pendingOrders.get(orderId);
+  if (!order) return res.status(404).json({ error: "ไม่พบออเดอร์" });
+  if (order.state === "confirmed") return res.status(409).json({ error: "ยืนยันไปแล้ว" });
+  if (order.state !== "slip_sent") return res.status(400).json({ error: "ยังไม่มีสลิป — รอลูกค้าส่งก่อน" });
+  setConfirmed(orderId, order);
+  res.json({ success: true });
+  if (!order.userId.startsWith("TEST")) notifyCustomerConfirmed(orderId, order);
+});
+
 // admin token (dev only — ให้เปิดหน้า admin ได้)
 app.get("/api/admin/token", (_req, res) => {
   if (NODE_ENV !== "development") return res.status(403).json({ error: "Dev only" });
@@ -382,6 +398,36 @@ app.delete("/api/admin/menu/:id", requireAdmin, (req, res) => {
   reloadMenuFromDb();
   res.json({ success: true });
 });
+
+app.get("/api/env", (_req, res) => {
+  res.json({ dev: process.env.NODE_ENV === "development" });
+});
+
+// DEV-only: สร้าง test order โดยไม่ต้องผ่าน LINE
+if (process.env.NODE_ENV === "development") {
+  app.post("/api/dev/test-order", express.json(), (req, res) => {
+    orderCounter++;
+    saveCounter();
+    const orderId = `MGR${String(orderCounter).padStart(4, "0")}`;
+    const slipToken = crypto.randomBytes(16).toString("hex");
+    const newOrder = {
+      userId: "TEST-DEV",
+      items: [{ name: "Test Item", qty: 1, price: 50 }],
+      summary: "1. Test Item = 50.-",
+      total: 50,
+      delivery: { location: DELIVERY_LOCATIONS[0], name: "Tester", phone: "0999999999" },
+      state: "await_slip",
+      slipToken,
+      createdAt: Date.now(),
+      orderStatus: "none",
+      statusEta: 0,
+      statusAt: 0,
+    };
+    pendingOrders.set(orderId, newOrder);
+    store.saveOrder(orderId, newOrder);
+    res.json({ orderId, slipToken, url: `/order.html?oid=${orderId}&s=${slipToken}` });
+  });
+}
 
 // Public menu API (order.html ใช้)
 app.get("/api/menu", (_req, res) => {
@@ -668,16 +714,22 @@ app.post("/api/slip", slipLimiter, express.json({ limit: "15mb" }), async (req, 
     if (order.state !== "await_slip") {
       return res.status(409).json({ error: "ออเดอร์นี้ส่งสลิปไปแล้วครับ" });
     }
-    if (!image || typeof image !== "string") {
-      return res.status(400).json({ error: "ไม่พบไฟล์สลิป" });
-    }
-    const m = image.match(/^data:image\/(png|jpe?g);base64,(.+)$/);
-    if (!m) {
-      return res.status(400).json({ error: "ไฟล์ต้องเป็นรูปภาพ (JPG/PNG)" });
-    }
-    const buffer = Buffer.from(m[2], "base64");
-    if (buffer.length > 12 * 1024 * 1024) {
-      return res.status(413).json({ error: "ไฟล์ใหญ่เกินไป" });
+    const isDev = process.env.NODE_ENV === "development";
+    let buffer;
+    if (isDev && (!image || image === "dev-skip")) {
+      buffer = Buffer.alloc(1);
+    } else {
+      if (!image || typeof image !== "string") {
+        return res.status(400).json({ error: "ไม่พบไฟล์สลิป" });
+      }
+      const m = image.match(/^data:image\/(png|jpe?g);base64,(.+)$/);
+      if (!m) {
+        return res.status(400).json({ error: "ไฟล์ต้องเป็นรูปภาพ (JPG/PNG)" });
+      }
+      buffer = Buffer.from(m[2], "base64");
+      if (buffer.length > 12 * 1024 * 1024) {
+        return res.status(413).json({ error: "ไฟล์ใหญ่เกินไป" });
+      }
     }
 
     // จองสถานะก่อน (sync) กันส่งสลิปซ้ำซ้อนตอนคนเยอะ — คืนสถานะถ้าตรวจไม่ผ่าน/ล้มเหลว
@@ -694,8 +746,12 @@ app.post("/api/slip", slipLimiter, express.json({ limit: "15mb" }), async (req, 
       return res.status(400).json({ error: verify.customerMessage });
     }
 
-    const slipFile = await saveSlipImage(buffer, orderId, order.slipToken);
-    order.slipUrl = `${getBaseUrl()}/images/slips/${slipFile}`;
+    if (isDev && buffer.length <= 1) {
+      order.slipUrl = null;
+    } else {
+      const slipFile = await saveSlipImage(buffer, orderId, order.slipToken);
+      order.slipUrl = `${getBaseUrl()}/images/slips/${slipFile}`;
+    }
     store.saveOrder(orderId, order);
 
     // ✅ SlipOK ตรวจผ่าน + ยอดตรง → ยืนยันอัตโนมัติ (ไม่ต้องรอแอดมิน)
@@ -1068,7 +1124,7 @@ function notifyCustomerConfirmed(orderId, order) {
     messages: [
       {
         type: "text",
-        text: `✅ ชำระเงินเรียบร้อยแล้ว!\n\n📋 ออเดอร์ #${orderId}${dPart}\n${order.summary}\n💰 รวม: ${order.total}.-\n\nกำลังเตรียมอาหารให้นะครับ 🍱`,
+        text: `✅ ชำระเงินเรียบร้อยแล้ว!\n\n📋 ออเดอร์ #${orderId}${dPart}\n${order.summary}\n💰 รวม: ${order.total}.-\n\nกำลังเตรียมอาหารให้นะครับ 🍱\n\n📍 ติดตามสถานะออเดอร์: ${getBaseUrl()}/order.html?oid=${orderId}&s=${order.slipToken}`,
       },
     ],
   }).catch((err) => console.error("Notify customer (confirm) error:", err.message));
@@ -1145,7 +1201,7 @@ async function handleImage(replyToken, userId, messageId) {
       await reply(replyToken, [
         {
           type: "text",
-          text: `✅ ชำระเงินเรียบร้อยแล้ว!\n\n📋 ออเดอร์ #${orderId}\n${order.summary}\n💰 รวม: ${order.total}.-\n\nกำลังเตรียมอาหารให้นะครับ 🍱`,
+          text: `✅ ชำระเงินเรียบร้อยแล้ว!\n\n📋 ออเดอร์ #${orderId}\n${order.summary}\n💰 รวม: ${order.total}.-\n\nกำลังเตรียมอาหารให้นะครับ 🍱\n\n📍 ติดตามสถานะออเดอร์: ${getBaseUrl()}/order.html?oid=${orderId}&s=${order.slipToken}`,
         },
       ]);
       notifyAdminAutoConfirmed(orderId, order);
@@ -1193,9 +1249,7 @@ async function handlePostback(replyToken, userId, data) {
     const session = getSession(userId);
 
     if (!oid || !pendingOrders.has(oid)) {
-      return reply(replyToken, [
-        { type: "text", text: `⚠️ ออเดอร์ #${oid || "-"} ถูกยกเลิกไปแล้ว` },
-      ]);
+      return;
     }
 
     const order = pendingOrders.get(oid);

@@ -54,6 +54,10 @@ function isReject(status) {
 //   error         — config ผิด (key/โควต้า/สาขา) หรือธนาคาร/เน็ตล่ม → caller fallback manual
 //   disabled      — ยังไม่ได้ตั้งค่า → caller ใช้ manual
 async function verifySlip(buffer, expectedAmount) {
+  if (process.env.NODE_ENV === "development") {
+    console.log("[SlipOK] DEV mode — auto-verified (no real check)");
+    return { status: "verified", slipAmount: Number(expectedAmount), data: { dev: true } };
+  }
   const { branchId, apiKey } = getConfig();
   if (!branchId || !apiKey) return { status: "disabled" };
   try {

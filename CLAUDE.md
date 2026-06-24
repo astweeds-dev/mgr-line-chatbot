@@ -134,7 +134,7 @@ Admin can update order status via LINE postback buttons or Admin Dashboard:
 
 ## Admin Dashboard (`public/admin.html`, added 2026-06-24)
 Web-based admin panel for managing orders and menu:
-- **Login**: requires `ADMIN_TOKEN` (auto-generated on startup, or set in `.env`)
+- **Login**: requires `ADMIN_TOKEN` (auto-generated on startup, or set in `.env`). Staff can also log in with a fixed `ADMIN_PIN` (set in `.env`) — PIN survives restarts, no need to copy the token.
 - **Orders tab**: view active orders, update status with ETA, view slips
 - **History tab**: view completed/delivered orders
 - **Menu tab**: add/edit/delete menu items stored in SQLite `menu_items` table

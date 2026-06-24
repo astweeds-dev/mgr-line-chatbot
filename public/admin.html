@@ -45,17 +45,27 @@ body{font-family:'Sarabun',sans-serif;background:#f5f5f0;color:#333;min-height:1
 .oc-status.s-slip_sent{background:#FCE4EC;color:#C62828}
 .oc-status.s-confirmed{background:#E8F5E9;color:#2E7D32}
 .oc-delivery{font-size:13px;color:#5A4F00;font-weight:600;margin-bottom:4px}
-.oc-summary{font-size:13px;color:#666;white-space:pre-line;margin-bottom:6px}
+.oc-summary{font-size:14px;color:#666;white-space:pre-line;margin-bottom:6px;line-height:1.5}
 .oc-total{font-size:15px;font-weight:800;color:#E85D3A}
-.oc-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
-.oc-actions button{padding:8px 14px;border-radius:8px;font-size:13px;font-weight:700;border:none;cursor:pointer;font-family:inherit;transition:all .1s}
-.oc-actions button:active{transform:scale(.95)}
+.oc-total.big{font-size:22px}
+.oc-actions{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.oc-actions .btn-next{width:100%;min-height:52px;padding:12px 18px;border-radius:12px;font-size:17px;font-weight:800;border:none;cursor:pointer;font-family:inherit;transition:all .1s;display:flex;align-items:center;justify-content:center;gap:6px}
+.oc-actions .btn-next:active{transform:scale(.97)}
+.btn-confirm{background:#27AE60;color:#fff}
 .btn-preparing{background:#FF9800;color:#fff}
 .btn-delivering{background:#9C27B0;color:#fff}
 .btn-delivered{background:#27AE60;color:#fff}
 .btn-received{background:#2196F3;color:#fff}
-.eta-input{width:60px;padding:6px 8px;border-radius:8px;border:1.5px solid #e8e4cc;font-size:13px;font-family:inherit;text-align:center}
-.eta-label{font-size:12px;color:#888;align-self:center}
+.oc-wait{color:#999;font-size:14px;padding:8px 0;text-align:center}
+.eta-chips{margin-top:6px}
+.eta-chips-label{font-size:12px;color:#888;margin-bottom:4px}
+.eta-chip{display:inline-block;padding:8px 18px;border-radius:20px;font-size:14px;font-weight:700;border:1.5px solid #e8e4cc;background:#fff;color:#666;cursor:pointer;font-family:inherit;margin-right:6px;margin-bottom:4px;transition:all .15s}
+.eta-chip.on{background:#F9E84A;color:#5A4F00;border-color:#5A4F00}
+.eta-chip:active{transform:scale(.95)}
+.oc-new-badge{display:inline-block;background:#E85D3A;color:#fff;font-size:12px;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:8px;animation:pulse-badge 1.5s infinite}
+@keyframes pulse-new{0%,100%{box-shadow:0 0 0 0 rgba(232,93,58,.4)}50%{box-shadow:0 0 0 10px rgba(232,93,58,0)}}
+@keyframes pulse-badge{0%,100%{opacity:1}50%{opacity:.5}}
+.order-card.is-new{animation:pulse-new 1.5s infinite;border-left-color:#E85D3A}
 .oc-slip{margin-top:8px}
 .oc-slip img{max-width:120px;border-radius:8px;border:1px solid #e8e4cc;cursor:pointer}
 .slip-modal{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;z-index:200;cursor:pointer}
@@ -105,8 +115,8 @@ body{font-family:'Sarabun',sans-serif;background:#f5f5f0;color:#333;min-height:1
 <!-- Login -->
 <div id="login-page" class="login-wrap">
   <div class="login-box">
-    <h2>🔐 MGR Admin</h2>
-    <input type="text" id="token-input" placeholder="Admin Token">
+    <h2>🔐 เข้าสู่ระบบพนักงาน</h2>
+    <input type="text" id="token-input" inputmode="numeric" autocomplete="off" placeholder="ใส่รหัส PIN">
     <button onclick="doLogin()">เข้าสู่ระบบ</button>
   </div>
 </div>
@@ -182,6 +192,35 @@ let TOKEN = localStorage.getItem("mgr_admin_token") || "";
 let orders = [];
 let menuItems = [];
 let curTab = "active";
+let etaSel = {};       // orderId → selected ETA นาที
+let prevState = {};    // orderId → last known state
+let newIds = new Set();// orderIds ที่เพิ่งเข้า slip_sent (ใหม่)
+let firstLoad = true;
+
+// ==================== Web Audio (beep แจ้งเตือนออเดอร์ใหม่) ====================
+let audioCtx = null;
+function primeAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+  } catch (e) {}
+}
+function beep() {
+  try {
+    if (!audioCtx) return;
+    [0, 0.3].forEach(t0 => {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.connect(g); g.connect(audioCtx.destination);
+      o.type = "sine"; o.frequency.value = 880;
+      const t = audioCtx.currentTime + t0;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.35, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+      o.start(t); o.stop(t + 0.24);
+    });
+  } catch (e) {}
+}
+document.addEventListener("click", primeAudio, { once: false });
 
 const STATUS_LABELS = {
   none: "รอชำระ", received: "📋 รับแล้ว", preparing: "👨‍🍳 กำลังเตรียม",
@@ -196,7 +235,30 @@ function doLogin() {
   TOKEN = document.getElementById("token-input").value.trim();
   if (!TOKEN) return;
   localStorage.setItem("mgr_admin_token", TOKEN);
+  primeAudio();
   startDashboard();
+}
+
+// ==================== ตรวจจับออเดอร์ใหม่ + beep ====================
+function processOrders(list) {
+  orders = list;
+  let hasNew = false;
+  // ตรวจหาออเดอร์ที่เพิ่งเข้า slip_sent
+  for (const o of list) {
+    const prev = prevState[o.orderId];
+    if (o.state === "slip_sent" && prev !== "slip_sent" && !firstLoad) {
+      newIds.add(o.orderId);
+      hasNew = true;
+    }
+    // ถ้าออเดอร์ไม่ใช่ slip_sent แล้ว ลบออกจาก newIds
+    if (o.state !== "slip_sent") {
+      newIds.delete(o.orderId);
+    }
+    prevState[o.orderId] = o.state;
+  }
+  if (hasNew) beep();
+  if (firstLoad) firstLoad = false;
+  renderOrders();
 }
 
 async function startDashboard() {
@@ -206,11 +268,10 @@ async function startDashboard() {
     document.getElementById("login-page").style.display = "none";
     document.getElementById("dashboard").style.display = "block";
     document.getElementById("env-badge").textContent = location.port === "3000" ? "DEV" : "MAIN";
-    orders = r.orders || [];
-    renderOrders();
+    processOrders(r.orders || []);
     loadMenu();
   } catch (e) {
-    showToast("Token ไม่ถูกต้อง", true);
+    showToast("รหัส PIN ไม่ถูกต้อง", true);
   }
 }
 
@@ -222,8 +283,7 @@ async function api(url, opts) {
 
 async function loadOrders() {
   const r = await api("/api/admin/orders");
-  orders = r.orders || [];
-  renderOrders();
+  processOrders(r.orders || []);
   showToast("รีเฟรชแล้ว");
 }
 
@@ -253,6 +313,7 @@ function orderCard(o, showActions) {
   const d = o.delivery || {};
   const time = o.createdAt ? new Date(o.createdAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" }) : "";
   const date = o.createdAt ? new Date(o.createdAt).toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok" }) : "";
+  const isNew = newIds.has(o.orderId);
 
   let statusBadge = "";
   if (o.state === "confirmed" || o.orderStatus !== "none") {
@@ -261,43 +322,93 @@ function orderCard(o, showActions) {
     statusBadge = `<span class="oc-status s-${o.state}">${STATE_LABELS[o.state] || o.state}</span>`;
   }
 
+  // ปุ่มเดียว: next-step ตามสถานะ
   let actions = "";
-  if (showActions && o.state === "confirmed") {
-    const cur = o.orderStatus || "received";
-    const all = ["received", "preparing", "delivering", "delivered"];
-    const idx = all.indexOf(cur);
-    const next = all.slice(idx + 1);
-    if (next.length) {
+  if (showActions) {
+    if (o.state === "slip_sent") {
+      // รอยืนยันชำระเงิน
       actions = `<div class="oc-actions">
-        <input type="number" class="eta-input" id="eta-${o.orderId}" placeholder="นาที" min="1" max="120">
-        <span class="eta-label">ETA</span>
-        ${next.map(s => `<button class="btn-${s}" onclick="updateStatus('${o.orderId}','${s}')">${STATUS_LABELS[s]}</button>`).join("")}
+        <button class="btn-next btn-confirm" onclick="confirmOrder('${o.orderId}')">✅ ยืนยันรับเงิน</button>
       </div>`;
+    } else if (o.state === "await_slip") {
+      actions = `<div class="oc-wait">⏳ รอลูกค้าโอนเงิน / ส่งสลิป</div>`;
+    } else if (o.state === "confirmed") {
+      const cur = o.orderStatus || "received";
+      let nextStatus = null, btnLabel = "", btnClass = "";
+      if (cur === "received" || cur === "none" || !cur) {
+        nextStatus = "preparing"; btnLabel = "🍳 เริ่มทำอาหาร"; btnClass = "btn-preparing";
+      } else if (cur === "preparing") {
+        nextStatus = "delivering"; btnLabel = "🛵 ออกไปส่ง"; btnClass = "btn-delivering";
+      } else if (cur === "delivering") {
+        nextStatus = "delivered"; btnLabel = "✅ ส่งสำเร็จ"; btnClass = "btn-delivered";
+      }
+      if (nextStatus) {
+        // ETA chips สำหรับ preparing / delivering
+        let etaHtml = "";
+        if (nextStatus === "preparing" || nextStatus === "delivering") {
+          const sel = etaSel[o.orderId] || 0;
+          etaHtml = `<div class="eta-chips">
+            <div class="eta-chips-label">⏱ แจ้งลูกค้า (ไม่บังคับ):</div>
+            ${[10,20,30].map(m => `<span class="eta-chip${sel===m?' on':''}" onclick="toggleEta('${o.orderId}',${m})">${m} นาที</span>`).join("")}
+          </div>`;
+        }
+        actions = `<div class="oc-actions">
+          ${etaHtml}
+          <button class="btn-next ${btnClass}" onclick="updateStatus('${o.orderId}','${nextStatus}')">${btnLabel}</button>
+        </div>`;
+      }
     }
   }
 
+  // สลิป
   let slip = "";
   if (o.slipUrl) {
     slip = `<div class="oc-slip"><img src="${o.slipUrl}" alt="slip" onclick="showSlip('${o.slipUrl}')"></div>`;
   }
 
-  return `<div class="order-card st-${o.orderStatus || 'none'}">
+  // แสดงยอดเงินตัวใหญ่สำหรับ slip_sent
+  const totalClass = o.state === "slip_sent" ? "oc-total big" : "oc-total";
+  const newBadge = isNew ? `<span class="oc-new-badge">🔔 ใหม่!</span>` : "";
+
+  return `<div class="order-card st-${o.orderStatus || 'none'}${isNew ? ' is-new' : ''}">
     <div class="oc-top">
-      <span class="oc-id">#${o.orderId}</span>
+      <span class="oc-id">#${o.orderId}${newBadge}</span>
       <span class="oc-time">${date} ${time}</span>
     </div>
     ${statusBadge}
     ${d.location ? `<div class="oc-delivery">📍 ${esc(d.location)} · ${esc(d.name || "")} · ${esc(d.phone || "")}</div>` : ""}
     <div class="oc-summary">${esc(o.summary || "")}</div>
-    <div class="oc-total">💰 ${o.total}.-</div>
+    <div class="${totalClass}">💰 ${o.total}.-</div>
     ${slip}
     ${actions}
   </div>`;
 }
 
+function toggleEta(orderId, minutes) {
+  if (etaSel[orderId] === minutes) {
+    delete etaSel[orderId];
+  } else {
+    etaSel[orderId] = minutes;
+  }
+  renderOrders();
+}
+
+async function confirmOrder(orderId) {
+  if (!confirm(`ยืนยันว่าได้รับเงินออเดอร์ #${orderId} แล้ว?`)) return;
+  try {
+    const r = await api("/api/admin/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId })
+    });
+    if (r.error) throw new Error(r.error);
+    showToast(`ยืนยันรับเงิน #${orderId} แล้ว ✅`);
+    loadOrders();
+  } catch (e) { showToast(e.message, true); }
+}
+
 async function updateStatus(orderId, status) {
-  const etaEl = document.getElementById("eta-" + orderId);
-  const eta = etaEl ? parseInt(etaEl.value) || 0 : 0;
+  const eta = etaSel[orderId] || 0;
   try {
     const r = await api("/api/admin/status", {
       method: "POST",
@@ -306,6 +417,7 @@ async function updateStatus(orderId, status) {
     });
     if (r.error) throw new Error(r.error);
     showToast(`อัปเดต #${orderId} → ${STATUS_LABELS[status]}`);
+    delete etaSel[orderId];
     loadOrders();
   } catch (e) { showToast(e.message, true); }
 }
@@ -451,15 +563,15 @@ function showToast(msg, err) {
   setTimeout(() => el.classList.remove("show"), 2500);
 }
 
-// Auto-refresh every 30s
-setInterval(() => { if (curTab === "active") loadOrders(); }, 30000);
+// Auto-refresh every 15s
+setInterval(() => { if (curTab === "active") loadOrders(); }, 15000);
 
 // Init
 if (TOKEN) startDashboard();
 
 // Check URL param
 const urlToken = new URLSearchParams(location.search).get("token");
-if (urlToken) { TOKEN = urlToken; localStorage.setItem("mgr_admin_token", urlToken); startDashboard(); }
+if (urlToken) { TOKEN = urlToken; localStorage.setItem("mgr_admin_token", urlToken); primeAudio(); startDashboard(); }
 </script>
 </body>
 </html>
