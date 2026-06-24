@@ -16,6 +16,8 @@ const config = {
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
 };
 const ADMIN_ID = process.env.ADMIN_USER_ID;
+// ปลายทางแจ้งเตือน: กลุ่ม LINE ถ้าตั้งไว้ ไม่งั้นส่งหาเจ้าของคนเดียว (ADMIN_ID ยังใช้เช็คสิทธิ์ปุ่ม postback)
+const ALERT_TARGET = process.env.ALERT_GROUP_ID || process.env.ADMIN_USER_ID;
 function getBaseUrl() {
   try {
     const raw = fs.readFileSync(path.join(__dirname, envFile), "utf8");
@@ -825,6 +827,23 @@ app.post(
 
 async function handleEvent(event) {
   const userId = event.source.userId;
+  const srcType = event.source.type; // "user" (แชทเดี่ยว) | "group" | "room"
+
+  // ในกลุ่ม/ห้องแชท: บอทเป็น "ตัวแจ้งเตือนอย่างเดียว" — ไม่ตอบโต้ข้อความที่คนคุยกันเลย
+  // ยกเว้นคำสั่ง myidmgr (ไว้ดึง Group ID ตอนตั้งค่ากลุ่มแจ้งเตือนใหม่)
+  if (srcType === "group" || srcType === "room") {
+    if (
+      event.type === "message" &&
+      event.message.type === "text" &&
+      event.message.text.trim().toLowerCase() === "myidmgr"
+    ) {
+      const id = srcType === "group" ? event.source.groupId : event.source.roomId;
+      return reply(event.replyToken, [
+        { type: "text", text: `🆔 ${srcType === "group" ? "Group" : "Room"} ID:\n${id}` },
+      ]);
+    }
+    return null; // เงียบสนิท ไม่ตอบอะไรในกลุ่ม
+  }
 
   if (event.type === "follow") {
     return reply(event.replyToken, [
@@ -842,8 +861,21 @@ async function handleEvent(event) {
   if (event.type === "message") {
     if (event.message.type === "image")
       return handleImage(event.replyToken, userId, event.message.id);
-    if (event.message.type === "text")
-      return handleText(event.replyToken, userId, event.message.text.trim());
+    if (event.message.type === "text") {
+      const text = event.message.text.trim();
+      // คำสั่งดู ID (รองรับทั้งแชทเดี่ยว = User ID และในกลุ่ม = Group ID)
+      if (text.toLowerCase() === "myidmgr") {
+        const src = event.source;
+        const idLine =
+          src.type === "group" ? `👥 Group ID:\n${src.groupId}` :
+          src.type === "room"  ? `👥 Room ID:\n${src.roomId}` :
+          `🙋 User ID:\n${userId}`;
+        return reply(event.replyToken, [
+          { type: "text", text: `🆔 ไอดีนี้คือ:\n${idLine}\n\nส่งไอดีนี้ให้ผู้ดูแลระบบ เพื่อตั้งรับการแจ้งเตือนครับ` },
+        ]);
+      }
+      return handleText(event.replyToken, userId, text);
+    }
   }
 
   return null;
@@ -1080,6 +1112,7 @@ function adminSlipFlex(orderId, order) {
 
 // คืน true ถ้าแจ้งสำเร็จ
 async function notifyAdminSlip(orderId, order) {
+  // ส่งเฉพาะเจ้าของ (ADMIN_ID) ไม่เข้ากลุ่ม — เพราะพนักงานยืนยันรับเงินผ่านแดชบอร์ดอยู่แล้ว
   if (!ADMIN_ID) {
     console.error("WARNING: No ADMIN_USER_ID configured — slip notification skipped");
     return false;
@@ -1132,7 +1165,7 @@ function notifyCustomerConfirmed(orderId, order) {
 
 // แจ้งแอดมินว่าออเดอร์ผ่านการตรวจสลิปอัตโนมัติแล้ว (ไม่ต้องกดยืนยัน) — ไว้เริ่มทำอาหาร
 function notifyAdminAutoConfirmed(orderId, order) {
-  if (!ADMIN_ID) return Promise.resolve();
+  if (!ALERT_TARGET) return Promise.resolve();
   const dInfo = deliveryText(order);
   const dPart = dInfo ? `${dInfo}\n` : "";
   const messages = [];
@@ -1148,7 +1181,7 @@ function notifyAdminAutoConfirmed(orderId, order) {
     text: `✅ ออเดอร์ใหม่ #${orderId} (สลิปผ่านการตรวจอัตโนมัติ)\n${dPart}${order.summary}\n💰 รวม: ${order.total}.-\n\nเริ่มทำได้เลยครับ 🍱`,
   });
   return client.pushMessage({
-    to: ADMIN_ID,
+    to: ALERT_TARGET,
     messages,
   }).catch((err) => console.error("Notify admin (auto-confirm) error:", err.message));
 }

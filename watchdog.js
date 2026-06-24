@@ -77,12 +77,13 @@ function updateBaseUrl(url) {
 
 function sendAlert(text) {
   return new Promise((resolve) => {
-    if (!config.CHANNEL_ACCESS_TOKEN || !config.ADMIN_USER_ID) {
+    const alertTarget = config.ALERT_GROUP_ID || config.ADMIN_USER_ID;
+    if (!config.CHANNEL_ACCESS_TOKEN || !alertTarget) {
       log("LINE alert skipped (no credentials)");
       return resolve();
     }
     const body = JSON.stringify({
-      to: config.ADMIN_USER_ID,
+      to: alertTarget,
       messages: [{ type: "text", text }],
     });
     const req = https.request(
