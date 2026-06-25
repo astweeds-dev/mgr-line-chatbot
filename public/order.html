@@ -48,7 +48,7 @@ button{font-family:'Sarabun',sans-serif;cursor:pointer;border:none;outline:none}
 .cat-tabs::-webkit-scrollbar{display:none}
 .cat-tab{flex:0 0 auto;padding:8px 18px;border-radius:20px;font-size:14px;font-weight:700;background:#fff;color:#999;border:1.5px solid #e8e4cc;white-space:nowrap;transition:all .15s}
 .cat-tab.active{background:#F9E84A;color:#5A4F00;border-color:#F9E84A}
-.cat-tab.closed{opacity:.45;text-decoration:line-through}
+.cat-tab.closed{opacity:.4;text-decoration:line-through;pointer-events:none;cursor:not-allowed}
 .menu-empty{text-align:center;color:#aaa;font-size:14px;padding:48px 16px}
 
 /* ===== MENU LIST ===== */
@@ -380,6 +380,15 @@ button{font-family:'Sarabun',sans-serif;cursor:pointer;border:none;outline:none}
   <p data-i18n="sending">กำลังส่งออเดอร์...</p>
 </div>
 
+<!-- ==================== SHOP CLOSED OVERLAY ==================== -->
+<div class="overlay" id="overlay-closed" style="background:rgba(0,0,0,.55);z-index:150">
+  <div style="background:#fff;border-radius:20px;padding:32px 24px;max-width:320px;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.15)">
+    <div style="font-size:56px;margin-bottom:12px">🔒</div>
+    <div id="closed-title" style="font-size:18px;font-weight:800;color:#E74C3C;margin-bottom:8px">ร้านปิดชั่วคราว</div>
+    <div id="closed-detail" style="font-size:14px;color:#888;line-height:1.6"></div>
+  </div>
+</div>
+
 <!-- ==================== TOAST ==================== -->
 <div class="toast" id="toast"></div>
 
@@ -398,7 +407,9 @@ const BIZ_HOURS = {
   drinks: { open: 0, close: 24, label: { th: "00:00 - 23:59", en: "12:00 AM - 11:59 PM" } },
 };
 function catSection(catId) { return catId === "food" ? "food" : "drinks"; }
+let serverClosed = { food: false, drinks: false };
 function isSectionOpen(sec) {
+  if (serverClosed[sec]) return false;
   const h = BIZ_HOURS[sec];
   const hr = new Date().getHours();
   return h && hr >= h.open && hr < h.close;
@@ -739,6 +750,7 @@ async function loadMenu() {
   try {
     const r = await fetch("/api/menu");
     const d = await r.json();
+    if (d.closed) serverClosed = d.closed;
     if (d && d.source === "db" && Array.isArray(d.items) && d.items.length) {
       MENU = d.items.filter(it => it.enabled).map(it => ({
         id: it.id,
@@ -757,6 +769,7 @@ async function loadMenu() {
 
 // ==================== MENU ====================
 function selectCat(id) {
+  if (!isSectionOpen(catSection(id))) return;
   curCat = id;
   renderMenu();
 }
@@ -780,10 +793,13 @@ function renderMenu() {
     const secName = sec === "food"
       ? (lang === "th" ? "ครัว" : "Kitchen")
       : (lang === "th" ? "ร้านเครื่องดื่ม" : "Drinks");
+    const reason = serverClosed[sec]
+      ? (lang === "th" ? "ปิดชั่วคราว" : "temporarily closed")
+      : `${lang === "th" ? "เปิดให้บริการ" : "Open"} ${L(h.label)}`;
     listEl.innerHTML = `<div class="menu-empty" style="text-align:center;padding:40px 20px;">
       <div style="font-size:48px;margin-bottom:12px;">🔒</div>
       <div style="font-size:16px;font-weight:bold;margin-bottom:8px;">${secName} ${lang === "th" ? "ปิดอยู่" : "is closed"}</div>
-      <div style="color:#888;">${lang === "th" ? "เปิดให้บริการ" : "Open"} ${L(h.label)}</div>
+      <div style="color:#888;">${reason}</div>
     </div>`;
     renderCartBar();
     return;
@@ -1389,11 +1405,66 @@ function setLang(l) {
 
 function toggleLang() { setLang(lang === "th" ? "en" : "th"); }
 
+// ==================== REMEMBER CUSTOMER ====================
+async function loadCustomer() {
+  if (!TOKEN) return;
+  try {
+    const r = await fetch(`/api/customer?t=${encodeURIComponent(TOKEN)}`);
+    const d = await r.json();
+    if (d.found) {
+      document.getElementById("in-name").value = d.name;
+      document.getElementById("in-phone").value = d.phone;
+      delivery.name = d.name;
+      delivery.phone = d.phone;
+      validateStart();
+    }
+  } catch {}
+}
+
+// ==================== SHOP STATUS POLLING ====================
+function checkShopClosed() {
+  const ov = document.getElementById("overlay-closed");
+  const foodClosed = !isSectionOpen("food");
+  const drinksClosed = !isSectionOpen("drinks");
+
+  if (foodClosed && drinksClosed) {
+    document.getElementById("closed-title").textContent = lang === "th" ? "ร้านปิดชั่วคราว" : "Shop temporarily closed";
+    document.getElementById("closed-detail").textContent = lang === "th" ? "ไม่สามารถสั่งอาหารและเครื่องดื่มได้ในขณะนี้" : "Food and drinks ordering is currently unavailable";
+    ov.classList.add("show");
+  } else {
+    ov.classList.remove("show");
+    if (foodClosed && catSection(curCat) === "food") {
+      curCat = CATS.find(c => isSectionOpen(catSection(c.id)))?.id || curCat;
+    }
+    if (drinksClosed && catSection(curCat) === "drinks") {
+      curCat = CATS.find(c => isSectionOpen(catSection(c.id)))?.id || curCat;
+    }
+    renderMenu();
+  }
+}
+
+async function pollShopStatus() {
+  try {
+    const r = await fetch("/api/menu");
+    const d = await r.json();
+    if (d.closed) {
+      const changed = serverClosed.food !== d.closed.food || serverClosed.drinks !== d.closed.drinks;
+      serverClosed = d.closed;
+      if (changed) {
+        checkShopClosed();
+        if (document.getElementById("v-menu").classList.contains("active")) renderMenu();
+      }
+    }
+  } catch {}
+}
+setInterval(pollShopStatus, 30000);
+
 // ==================== INIT ====================
 try { liff.init({ liffId: new URLSearchParams(location.search).get("liffId") || "" }).catch(() => {}); } catch {}
 updateLangBtn();
 applyStaticText();
 loadMenu().then(() => {
+  checkShopClosed();
   if (document.getElementById("v-menu").classList.contains("active")) renderMenu();
 });
 const resumeOid = _params.get("oid");
@@ -1402,6 +1473,7 @@ if (resumeOid && resumeS) {
   resumeOrder(resumeOid, resumeS);
 } else {
   renderLocations();
+  loadCustomer();
 }
 </script>
 </body>

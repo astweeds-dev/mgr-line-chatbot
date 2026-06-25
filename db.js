@@ -34,6 +34,12 @@ db.exec(`
     orderId   TEXT,
     updatedAt INTEGER
   );
+  CREATE TABLE IF NOT EXISTS customers (
+    userId    TEXT PRIMARY KEY,
+    name      TEXT NOT NULL,
+    phone     TEXT NOT NULL,
+    updatedAt INTEGER
+  );
   CREATE TABLE IF NOT EXISTS menu_items (
     id        INTEGER PRIMARY KEY,
     cat       TEXT NOT NULL,
@@ -197,6 +203,23 @@ function menuCount() {
   return db.prepare(`SELECT COUNT(*) as c FROM menu_items`).get().c;
 }
 
+// ---- Customers (remember name & phone) ----
+const stmtUpsertCustomer = db.prepare(`
+  INSERT INTO customers (userId, name, phone, updatedAt)
+  VALUES (@userId, @name, @phone, @updatedAt)
+  ON CONFLICT(userId) DO UPDATE SET name=@name, phone=@phone, updatedAt=@updatedAt
+`);
+const stmtGetCustomer = db.prepare(`SELECT name, phone FROM customers WHERE userId = ?`);
+
+function saveCustomer(userId, name, phone) {
+  stmtUpsertCustomer.run({ userId, name, phone, updatedAt: Date.now() });
+}
+
+function getCustomer(userId) {
+  const row = stmtGetCustomer.get(userId);
+  return row ? { name: row.name, phone: row.phone } : null;
+}
+
 module.exports = {
   saveOrder,
   deleteOrder,
@@ -208,4 +231,6 @@ module.exports = {
   deleteMenuItem,
   loadMenuItems,
   menuCount,
+  saveCustomer,
+  getCustomer,
 };

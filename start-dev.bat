@@ -91,11 +91,16 @@ set NODE_ENV=development
 node -e "require('dotenv').config({path:'.env.development'});const{messagingApi}=require('@line/bot-sdk');const c=new messagingApi.MessagingApiClient({channelAccessToken:process.env.CHANNEL_ACCESS_TOKEN});const url=process.env.BASE_URL+'/webhook';c.setWebhookEndpoint({endpoint:url}).then(()=>console.log('Webhook set:',url)).catch(e=>console.error('Error:',e.body||e.message))"
 echo.
 
+:: Read admin token from server log
+set ADMIN_TOKEN=
+for /f "tokens=4" %%t in ('findstr /c:"generated token:" server.log 2^>nul') do set "ADMIN_TOKEN=%%t"
+
 :start_monitor
 echo ============================================
 echo   DEV MODE - All services running!
 echo   - Server:  http://localhost:3000
 if defined TUNNEL_URL echo   - Tunnel:  %TUNNEL_URL%
+if defined ADMIN_TOKEN echo   - Admin:   http://localhost:3000/admin.html?token=%ADMIN_TOKEN%
 echo   - Webhook: auto-updated (DEV channel)
 echo   - Monitor: checking every 30 seconds
 echo.

@@ -41,7 +41,11 @@ const BUSINESS_HOURS = {
   drinks: { open: 0, close: 24, label: "00:00 - 23:59" },
 };
 
+// แอดมินกดปิด/เปิดครัว-กาแฟ manual (null = ใช้เวลาปกติ, false = บังคับปิด)
+const manualOverride = { food: null, drinks: null };
+
 function isSectionOpen(section) {
+  if (manualOverride[section] === false) return false;
   const hour = new Date().getHours();
   const h = BUSINESS_HOURS[section];
   return h && hour >= h.open && hour < h.close;
@@ -401,6 +405,24 @@ app.delete("/api/admin/menu/:id", requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
+// ==================== Admin Shop Status (ปิด/เปิดครัว-กาแฟ) ====================
+
+app.get("/api/admin/shop-status", requireAdmin, (_req, res) => {
+  res.json({
+    food:   { open: isSectionOpen("food"),   manualClosed: manualOverride.food === false },
+    drinks: { open: isSectionOpen("drinks"), manualClosed: manualOverride.drinks === false },
+  });
+});
+
+app.post("/api/admin/shop-status", requireAdmin, express.json(), (req, res) => {
+  const { section, closed } = req.body;
+  if (section !== "food" && section !== "drinks") return res.status(400).json({ error: "Invalid section" });
+  manualOverride[section] = closed ? false : null;
+  const label = section === "food" ? "ครัว" : "เครื่องดื่ม/กาแฟ";
+  console.log(`[ADMIN] ${label} ${closed ? "ปิด" : "เปิด"} (manual override)`);
+  res.json({ success: true, section, closed: !!closed });
+});
+
 app.get("/api/env", (_req, res) => {
   res.json({ dev: process.env.NODE_ENV === "development" });
 });
@@ -434,10 +456,14 @@ if (process.env.NODE_ENV === "development") {
 // Public menu API (order.html ใช้)
 app.get("/api/menu", (_req, res) => {
   const items = store.loadMenuItems();
+  const closed = {
+    food: !isSectionOpen("food"),
+    drinks: !isSectionOpen("drinks"),
+  };
   if (items.length === 0) {
-    res.json({ items: [], source: "hardcoded" });
+    res.json({ items: [], source: "hardcoded", closed });
   } else {
-    res.json({ items, source: "db" });
+    res.json({ items, source: "db", closed });
   }
 });
 
@@ -474,6 +500,18 @@ app.get("/api/order-tracking", (req, res) => {
   }
   if (!s || order.slipToken !== s) return res.status(401).json({ error: "Invalid token" });
   res.json({ orderId: oid, orderStatus: order.orderStatus || "none", statusEta: order.statusEta || 0, statusAt: order.statusAt || 0, state: order.state });
+});
+
+// ==================== API: ดึงข้อมูลลูกค้าเดิม (remember customer) ====================
+
+app.get("/api/customer", (req, res) => {
+  const token = req.query.t;
+  if (!token) return res.json({ found: false });
+  const tokenData = orderTokens.get(token);
+  if (!tokenData) return res.json({ found: false });
+  const c = store.getCustomer(tokenData.userId);
+  if (!c) return res.json({ found: false });
+  res.json({ found: true, name: c.name, phone: c.phone });
 });
 
 // ==================== API: รับออเดอร์จากเว็บ ====================
@@ -518,9 +556,11 @@ app.post("/api/order", express.json(), async (req, res) => {
     for (const it of items) {
       const sec = itemSection(parseCartKey(it.key).id);
       if (!isSectionOpen(sec)) {
-        const h = BUSINESS_HOURS[sec];
         const label = sec === "food" ? "ครัว" : "ร้านเครื่องดื่ม";
-        return res.status(400).json({ error: `${label}ปิดแล้วครับ เปิด ${h.label} น.` });
+        const reason = manualOverride[sec] === false
+          ? `${label}ปิดชั่วคราวครับ`
+          : `${label}ปิดแล้วครับ เปิด ${BUSINESS_HOURS[sec].label} น.`;
+        return res.status(400).json({ error: reason });
       }
     }
 
@@ -579,6 +619,7 @@ app.post("/api/order", express.json(), async (req, res) => {
     session.state = "await_slip";
     session.orderId = orderId;
     store.saveSession(userId, session);
+    store.saveCustomer(userId, dName, dPhone);
 
     res.json({ success: true, orderId, slipToken });
 
@@ -928,17 +969,24 @@ async function handleText(replyToken, userId, text) {
 
     // บล็อกถ้าหมวดที่กดปิดอยู่
     if (isFood && !foodOpen) {
-      let msg = `🕐 ครัวเปิดให้บริการ ${BUSINESS_HOURS.food.label} น. ครับ`;
+      let msg = manualOverride.food === false
+        ? "🔴 ครัวปิดชั่วคราวครับ"
+        : `🕐 ครัวเปิดให้บริการ ${BUSINESS_HOURS.food.label} น. ครับ`;
       if (drinkOpen) msg += `\n\n☕ สั่งเครื่องดื่มได้เลย กดปุ่ม "Drinks & Coffee" ด้านล่าง`;
       return reply(replyToken, [{ type: "text", text: msg }]);
     }
     if (isDrink && !drinkOpen) {
-      let msg = `🕐 ร้านเครื่องดื่มเปิดให้บริการ ${BUSINESS_HOURS.drinks.label} น. ครับ`;
+      let msg = manualOverride.drinks === false
+        ? "🔴 ร้านเครื่องดื่มปิดชั่วคราวครับ"
+        : `🕐 ร้านเครื่องดื่มเปิดให้บริการ ${BUSINESS_HOURS.drinks.label} น. ครับ`;
       if (foodOpen) msg += `\n\n🍱 สั่งอาหารได้เลย กดปุ่ม "Food" ด้านล่าง`;
       return reply(replyToken, [{ type: "text", text: msg }]);
     }
     if (isBoth && !foodOpen && !drinkOpen) {
-      return reply(replyToken, [{ type: "text", text: `🕐 ร้านปิดแล้วครับ\n\n🍱 ครัว: ${BUSINESS_HOURS.food.label} น.\n☕ เครื่องดื่ม: ${BUSINESS_HOURS.drinks.label} น.` }]);
+      const reason = (manualOverride.food === false || manualOverride.drinks === false)
+        ? "🔴 ร้านปิดชั่วคราวครับ"
+        : `🕐 ร้านปิดแล้วครับ\n\n🍱 ครัว: ${BUSINESS_HOURS.food.label} น.\n☕ เครื่องดื่ม: ${BUSINESS_HOURS.drinks.label} น.`;
+      return reply(replyToken, [{ type: "text", text: reason }]);
     }
 
     const token = createToken(userId);

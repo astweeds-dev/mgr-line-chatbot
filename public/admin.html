@@ -74,6 +74,11 @@ body{font-family:'Sarabun',sans-serif;background:#f5f5f0;color:#333;min-height:1
 .empty{text-align:center;padding:60px 20px;color:#ccc;font-size:15px}
 .refresh-btn{background:none;border:none;color:#F9E84A;font-size:14px;font-weight:700;cursor:pointer;padding:6px 12px;border-radius:8px}
 .refresh-btn:hover{background:rgba(249,232,74,.15)}
+.shop-toggles{display:flex;gap:6px;padding:10px 16px;background:#FFFEF5;border-bottom:1px solid #e8e4cc}
+.shop-toggle{flex:1;padding:10px;border-radius:10px;font-size:14px;font-weight:800;border:none;cursor:pointer;font-family:inherit;transition:all .15s}
+.shop-toggle:active{transform:scale(.97)}
+.shop-toggle.is-open{background:#E8F5E9;color:#2E7D32}
+.shop-toggle.is-closed{background:#FDEAEA;color:#E74C3C}
 .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-100px);background:#27AE60;color:#fff;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:600;z-index:300;transition:transform .3s}
 .toast.show{transform:translateX(-50%) translateY(0)}
 .toast.err{background:#E74C3C}
@@ -129,6 +134,10 @@ body{font-family:'Sarabun',sans-serif;background:#f5f5f0;color:#333;min-height:1
       <button class="refresh-btn" onclick="loadOrders()">🔄 รีเฟรช</button>
       <span class="badge" id="env-badge"></span>
     </div>
+  </div>
+  <div class="shop-toggles" id="shop-toggles" style="display:none">
+    <button class="shop-toggle is-open" id="toggle-food" onclick="toggleShop('food')">🍳 ครัว: เปิด</button>
+    <button class="shop-toggle is-open" id="toggle-drinks" onclick="toggleShop('drinks')">☕ กาแฟ: เปิด</button>
   </div>
   <div class="tabs">
     <div class="tab active" data-tab="active" onclick="switchTab('active')">ออเดอร์ <span class="count" id="count-active">0</span></div>
@@ -270,6 +279,7 @@ async function startDashboard() {
     document.getElementById("env-badge").textContent = location.port === "3000" ? "DEV" : "MAIN";
     processOrders(r.orders || []);
     loadMenu();
+    loadShopStatus();
   } catch (e) {
     showToast("รหัส PIN ไม่ถูกต้อง", true);
   }
@@ -565,6 +575,51 @@ function showToast(msg, err) {
 
 // Auto-refresh every 15s
 setInterval(() => { if (curTab === "active") loadOrders(); }, 15000);
+
+// ==================== Shop Status Toggles ====================
+
+let shopStatus = { food: { open: true, manualClosed: false }, drinks: { open: true, manualClosed: false } };
+
+async function loadShopStatus() {
+  try {
+    const r = await api("/api/admin/shop-status");
+    shopStatus = r;
+    renderShopToggles();
+    document.getElementById("shop-toggles").style.display = "flex";
+  } catch (e) {}
+}
+
+function renderShopToggles() {
+  for (const sec of ["food", "drinks"]) {
+    const btn = document.getElementById("toggle-" + sec);
+    const s = shopStatus[sec];
+    const label = sec === "food" ? "🍳 ครัว" : "☕ กาแฟ";
+    if (s.manualClosed) {
+      btn.className = "shop-toggle is-closed";
+      btn.textContent = label + ": ปิดอยู่";
+    } else {
+      btn.className = "shop-toggle is-open";
+      btn.textContent = label + ": เปิดอยู่";
+    }
+  }
+}
+
+async function toggleShop(section) {
+  const current = shopStatus[section];
+  const willClose = !current.manualClosed;
+  const label = section === "food" ? "ครัว" : "กาแฟ/เครื่องดื่ม";
+  if (!confirm(willClose ? `ปิด${label}เลยนะ?` : `เปิด${label}คืนนะ?`)) return;
+  try {
+    const r = await api("/api/admin/shop-status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ section, closed: willClose })
+    });
+    if (r.error) throw new Error(r.error);
+    showToast(willClose ? `ปิด${label}แล้ว 🔴` : `เปิด${label}แล้ว 🟢`);
+    loadShopStatus();
+  } catch (e) { showToast(e.message, true); }
+}
 
 // Init
 if (TOKEN) startDashboard();
