@@ -23,6 +23,10 @@ button{font-family:'Sarabun',sans-serif;cursor:pointer;border:none;outline:none}
 .hero{position:relative}
 .btn-close-page{position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:50%;background:rgba(0,0,0,.08);color:#5A4F00;font-size:20px;display:flex;align-items:center;justify-content:center;line-height:1;z-index:10}
 .hero-sub{font-size:12px;color:#8a7f33;font-weight:600;margin-top:6px;letter-spacing:.3px}
+.shop-status{display:flex;justify-content:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+.shop-status-pill{display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:20px;font-size:12px;font-weight:700}
+.shop-status-pill.open{background:#E8F5E9;color:#2E7D32}
+.shop-status-pill.closed{background:#FDEAEA;color:#C62828}
 
 /* ===== START FORM (จุดจัดส่ง + ข้อมูลลูกค้า) ===== */
 .start-form{padding:18px 16px 8px}
@@ -243,6 +247,7 @@ button{font-family:'Sarabun',sans-serif;cursor:pointer;border:none;outline:none}
     <img src="/images/mgr%20logo.jpg" alt="MGR" class="hero-logo">
     <div class="hero-name">Merry Go Round Studio</div>
     <span class="hero-badge" data-i18n="tagline">สั่งอาหารและเครื่องดื่ม</span>
+    <div class="shop-status" id="shop-status"></div>
   </div>
   <div class="start-form">
     <div class="sf-section">
@@ -714,6 +719,21 @@ function getSelectedItems() {
     if (desc) name += ` (${desc})`;
     return { key, name, type: line.meat, qty: line.qty, unitPrice: up, totalPrice: up * line.qty, price: up * line.qty };
   });
+}
+
+// ==================== SHOP STATUS ====================
+function renderShopStatus() {
+  const el = document.getElementById("shop-status");
+  if (!el) return;
+  const foodOpen = isSectionOpen("food");
+  const drinksOpen = isSectionOpen("drinks");
+  const foodLabel = lang === "en" ? "Kitchen" : "ครัว";
+  const drinksLabel = lang === "en" ? "Coffee & Drinks" : "กาแฟ/เครื่องดื่ม";
+  const openTxt = lang === "en" ? "Open" : "เปิด";
+  const closedTxt = lang === "en" ? "Closed" : "ปิด";
+  el.innerHTML =
+    `<span class="shop-status-pill ${foodOpen ? 'open' : 'closed'}">🍱 ${foodLabel} · ${foodOpen ? openTxt : closedTxt}</span>` +
+    `<span class="shop-status-pill ${drinksOpen ? 'open' : 'closed'}">☕ ${drinksLabel} · ${drinksOpen ? openTxt : closedTxt}</span>`;
 }
 
 // ==================== START (จุดจัดส่ง + ข้อมูลลูกค้า) ====================
@@ -1439,6 +1459,7 @@ function setLang(l) {
   applyStaticText();
   // re-render เนื้อหา dynamic ของทุก view (ราคาถูกอยู่แล้ว แค่เปลี่ยนข้อความ)
   renderLocations();
+  renderShopStatus();
   renderDeliveryBar();
   if (document.getElementById("v-menu").classList.contains("active")) renderMenu();
   if (document.getElementById("v-detail").classList.contains("active") && curItem) renderDetail();
@@ -1498,7 +1519,7 @@ async function pollShopStatus() {
     if (d.closed) {
       const changed = serverClosed.food !== d.closed.food || serverClosed.drinks !== d.closed.drinks;
       serverClosed = d.closed;
-      if (changed) { checkShopClosed(); needRender = true; }
+      if (changed) { checkShopClosed(); renderShopStatus(); needRender = true; }
     }
 
     if (d.source === "db" && Array.isArray(d.items) && d.items.length) {
@@ -1583,6 +1604,7 @@ if (resumeOid && resumeS) {
   loadCustomer();
   startTokenCountdown();
 }
+renderShopStatus();
 </script>
 </body>
 </html>
