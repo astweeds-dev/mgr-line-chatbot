@@ -11,6 +11,7 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new Database(path.join(DATA_DIR, `mgr.${NODE_ENV}.db`));
 db.pragma("journal_mode = WAL"); // ทนทานต่อ crash + อ่าน/เขียนพร้อมกันได้ดีขึ้น
+db.pragma("synchronous = NORMAL");
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS orders (

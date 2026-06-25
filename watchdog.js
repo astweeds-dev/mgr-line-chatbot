@@ -1,6 +1,7 @@
 const { spawn, execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const https = require("https");
 const http = require("http");
 
@@ -307,6 +308,61 @@ async function monitor() {
   isRestarting = false;
 }
 
+// ==================== Slip Cleanup (ลบสลิปเก่ากว่า 30 วัน) ====================
+
+const SLIP_DIR = path.join(DIR, "images", "slips");
+
+function cleanOldSlips(daysToKeep = 30) {
+  try {
+    if (!fs.existsSync(SLIP_DIR)) return;
+    const cutoff = Date.now() - daysToKeep * 24 * 60 * 60 * 1000;
+    const files = fs.readdirSync(SLIP_DIR);
+    let deleted = 0;
+    for (const f of files) {
+      const fp = path.join(SLIP_DIR, f);
+      try {
+        const st = fs.statSync(fp);
+        if (!st.isFile()) continue;
+        if (st.mtimeMs < cutoff) {
+          fs.unlinkSync(fp);
+          deleted++;
+        }
+      } catch {}
+    }
+    if (deleted > 0) log(`[CLEANUP] Deleted ${deleted} slip(s) older than ${daysToKeep} days`);
+  } catch (e) {
+    log(`[CLEANUP] Error: ${e.message}`);
+  }
+}
+
+// ทำงานสัปดาห์ละครั้ง (7 วัน)
+setInterval(() => cleanOldSlips(30), 7 * 24 * 60 * 60 * 1000);
+
+// ==================== Resource Monitoring (Memory) ====================
+
+let memAlertCooldown = 0;
+
+function checkResources() {
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+  const usedPct = ((totalMem - freeMem) / totalMem) * 100;
+
+  if (usedPct > 85 && Date.now() > memAlertCooldown) {
+    const usedGB = ((totalMem - freeMem) / 1073741824).toFixed(1);
+    const totalGB = (totalMem / 1073741824).toFixed(1);
+    log(`[RESOURCE] Memory HIGH: ${usedPct.toFixed(1)}% (${usedGB}/${totalGB} GB)`);
+    sendAlert(
+      `⚠️ Memory สูง ${usedPct.toFixed(1)}%\n` +
+      `ใช้ ${usedGB} / ${totalGB} GB\n` +
+      `กรุณาตรวจสอบเครื่องครับ`
+    );
+    memAlertCooldown = Date.now() + 30 * 60 * 1000; // cooldown 30 นาที กันแจ้งซ้ำ
+  }
+}
+
+// ตรวจทุก 30 นาที
+setInterval(checkResources, 30 * 60 * 1000);
+
 // ==================== Shutdown ====================
 
 function shutdown() {
@@ -362,6 +418,10 @@ async function main() {
   log(`Monitoring started (every ${CHECK_INTERVAL / 1000}s)`);
   lastOkLog = Date.now();
   setInterval(monitor, CHECK_INTERVAL);
+
+  // ทำความสะอาดสลิปเก่าตอนเริ่มต้น + ตรวจ resource ครั้งแรก
+  cleanOldSlips(30);
+  checkResources();
 }
 
 main().catch((e) => {

@@ -1535,5 +1535,38 @@ function reply(replyToken, messages) {
   return client.replyMessage({ replyToken, messages });
 }
 
+// ==================== Auto-cancel ออเดอร์ค้าง ====================
+const AUTO_CANCEL_MS = 2 * 60 * 60 * 1000; // 2 ชั่วโมง
+setInterval(() => {
+  const now = Date.now();
+  for (const [orderId, order] of pendingOrders) {
+    if (order.state !== "await_slip") continue;
+    if (now - (order.createdAt || 0) < AUTO_CANCEL_MS) continue;
+
+    order.state = "cancelled";
+    store.saveOrder(orderId, order);
+    pendingOrders.delete(orderId);
+
+    const cs = getSession(order.userId);
+    if (cs.orderId === orderId) {
+      cs.state = "idle";
+      cs.orderId = null;
+      store.saveSession(order.userId, cs);
+    }
+
+    console.log(`[AUTO-CANCEL] ${orderId} (no slip after 2h)`);
+
+    if (!order.userId.startsWith("TEST")) {
+      client.pushMessage({
+        to: order.userId,
+        messages: [{
+          type: "text",
+          text: `⏰ ออเดอร์ #${orderId} ถูกยกเลิกอัตโนมัติเนื่องจากไม่มีการส่งสลิปภายในเวลาที่กำหนด\n\nหากต้องการสั่งใหม่ กรุณากดสั่งอีกครั้งครับ 🙏`,
+        }],
+      }).catch(e => console.error("Auto-cancel push error:", e.message));
+    }
+  }
+}, 15 * 60 * 1000); // ทุก 15 นาที
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`MGR LINE Chatbot running on port ${PORT}`));

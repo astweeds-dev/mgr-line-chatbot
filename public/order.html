@@ -216,6 +216,19 @@ button{font-family:'Sarabun',sans-serif;cursor:pointer;border:none;outline:none}
 
 .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-100px);background:#ff4444;color:#fff;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:600;z-index:200;transition:transform .3s ease;white-space:nowrap}
 .toast.show{transform:translateX(-50%) translateY(0)}
+
+/* ===== TOKEN COUNTDOWN BANNER ===== */
+.token-banner{position:fixed;top:0;left:0;right:0;z-index:300;padding:10px 16px;text-align:center;font-size:13px;font-weight:700;transform:translateY(-100%);transition:transform .3s ease}
+.token-banner.show{transform:translateY(0)}
+.token-banner.warn{background:#FFF3CD;color:#856404;border-bottom:2px solid #F9E84A}
+.token-banner.expired{background:#F8D7DA;color:#721C24;border-bottom:2px solid #E74C3C}
+.token-expired-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:250;display:none}
+.token-expired-overlay.show{display:flex}
+.token-expired-box{background:#fff;border-radius:20px;padding:32px 24px;max-width:320px;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.15)}
+.token-expired-box .ico{font-size:56px;margin-bottom:12px}
+.token-expired-box .ttl{font-size:18px;font-weight:800;color:#E74C3C;margin-bottom:8px}
+.token-expired-box .msg{font-size:14px;color:#888;line-height:1.6}
+.token-expired-box button{margin-top:16px;padding:12px 28px;border-radius:12px;font-size:15px;font-weight:800;background:#5A4F00;color:#F9E84A}
 </style>
 </head>
 <body>
@@ -386,6 +399,17 @@ button{font-family:'Sarabun',sans-serif;cursor:pointer;border:none;outline:none}
     <div style="font-size:56px;margin-bottom:12px">🔒</div>
     <div id="closed-title" style="font-size:18px;font-weight:800;color:#E74C3C;margin-bottom:8px">ร้านปิดชั่วคราว</div>
     <div id="closed-detail" style="font-size:14px;color:#888;line-height:1.6"></div>
+  </div>
+</div>
+
+<!-- ==================== TOKEN COUNTDOWN ==================== -->
+<div class="token-banner" id="token-banner"></div>
+<div class="token-expired-overlay" id="token-expired-overlay">
+  <div class="token-expired-box">
+    <div class="ico">⏰</div>
+    <div class="ttl" id="token-expired-title">ลิงก์หมดอายุแล้ว</div>
+    <div class="msg" id="token-expired-msg">กรุณากลับไปกดสั่งอาหารใหม่ในแอป LINE</div>
+    <button onclick="closePage()">กลับไปที่ LINE</button>
   </div>
 </div>
 
@@ -752,7 +776,7 @@ async function loadMenu() {
     const d = await r.json();
     if (d.closed) serverClosed = d.closed;
     if (d && d.source === "db" && Array.isArray(d.items) && d.items.length) {
-      MENU = d.items.filter(it => it.enabled).map(it => ({
+      MENU = d.items.map(it => ({
         id: it.id,
         cat: it.cat,
         name: { th: it.nameTh, en: it.nameEn },
@@ -762,6 +786,7 @@ async function loadMenu() {
         levelLabel: it.levelLabel || "",
         variantLabel: it.variantLabel || "",
         allowNote: true,
+        enabled: it.enabled !== false,
       }));
     }
   } catch (e) { /* ใช้ hardcoded fallback */ }
@@ -810,7 +835,8 @@ function renderMenu() {
     listEl.innerHTML = `<div class="menu-empty">${t("comingSoon")}</div>`;
   } else {
     listEl.innerHTML = items.map(item => {
-      const q = qtyForItem(item.id);
+      const sold = item.enabled === false;
+      const q = sold ? 0 : qtyForItem(item.id);
       let pText;
       if (hasMeat(item)) {
         const lo = Math.min(...Object.values(item.price));
@@ -818,6 +844,14 @@ function renderMenu() {
         pText = lo === hi ? `฿${lo}` : `฿${lo}–${hi}`;
       } else {
         pText = `฿${item.price.default}`;
+      }
+      if (sold) {
+        return `<div class="menu-card" style="opacity:.45;pointer-events:none">
+          <div class="mc-info">
+            <div class="mc-name">${dishName(item)}</div>
+            <div class="mc-price" style="color:#E74C3C;font-weight:700">${lang === "th" ? "สินค้าหมด" : "Sold out"}</div>
+          </div>
+        </div>`;
       }
       return `<div class="menu-card" onclick="openItem(${item.id})">
         <div class="mc-info">
@@ -1075,7 +1109,12 @@ function toggleExtra(id) {
 }
 
 // ==================== SUBMIT ====================
+let tokenExpired = false;
 async function submitOrder() {
+  if (tokenExpired) {
+    document.getElementById("token-expired-overlay").classList.add("show");
+    return;
+  }
   const items = getSelectedItems();
   if (!items.length) return;
 
@@ -1097,6 +1136,7 @@ async function submitOrder() {
     lastSlipToken = data.slipToken;
     lastTotal = totalPrice();
     lastItems = getSelectedItems();
+    stopTokenCountdown();
     goPayment();
   } catch (e) {
     document.getElementById("overlay-loading").classList.remove("show");
@@ -1163,6 +1203,10 @@ function addMoreItems() {
 
 // ==================== แนบสลิป ====================
 function pickSlip() {
+  if (tokenExpired) {
+    document.getElementById("token-expired-overlay").classList.add("show");
+    return;
+  }
   document.getElementById("slip-input").click();
 }
 
@@ -1459,6 +1503,52 @@ async function pollShopStatus() {
 }
 setInterval(pollShopStatus, 30000);
 
+// ==================== TOKEN COUNTDOWN ====================
+const TOKEN_TTL_MS = 30 * 60 * 1000;
+const TOKEN_WARN_MS = 15 * 60 * 1000;
+const tokenPageStart = Date.now();
+let tokenCountdownTimer = null;
+
+function stopTokenCountdown() {
+  if (tokenCountdownTimer) { clearInterval(tokenCountdownTimer); tokenCountdownTimer = null; }
+  document.getElementById("token-banner").classList.remove("show");
+}
+
+function startTokenCountdown() {
+  if (!TOKEN) return; // resume mode (oid+s) ไม่มี token — ไม่ต้องนับ
+  tokenCountdownTimer = setInterval(() => {
+    const elapsed = Date.now() - tokenPageStart;
+    const remaining = TOKEN_TTL_MS - elapsed;
+    const banner = document.getElementById("token-banner");
+
+    if (remaining <= 0) {
+      // หมดอายุ
+      tokenExpired = true;
+      clearInterval(tokenCountdownTimer);
+      banner.classList.remove("show");
+      document.getElementById("token-expired-overlay").classList.add("show");
+      const ttl = document.getElementById("token-expired-title");
+      const msg = document.getElementById("token-expired-msg");
+      if (lang === "en") {
+        ttl.textContent = "Link expired";
+        msg.textContent = "Please go back and order again in LINE app";
+      } else {
+        ttl.textContent = "ลิงก์หมดอายุแล้ว";
+        msg.textContent = "กรุณากลับไปกดสั่งอาหารใหม่ในแอป LINE";
+      }
+      return;
+    }
+
+    if (remaining <= TOKEN_WARN_MS) {
+      const mins = Math.ceil(remaining / 60000);
+      banner.className = "token-banner warn show";
+      banner.textContent = lang === "en"
+        ? `⏳ Your link expires in ${mins} minute${mins > 1 ? "s" : ""}. Please confirm your order.`
+        : `⏳ ลิงก์ของคุณจะหมดอายุในอีก ${mins} นาที กรุณากดยืนยันออเดอร์`;
+    }
+  }, 1000);
+}
+
 // ==================== INIT ====================
 try { liff.init({ liffId: new URLSearchParams(location.search).get("liffId") || "" }).catch(() => {}); } catch {}
 updateLangBtn();
@@ -1474,6 +1564,7 @@ if (resumeOid && resumeS) {
 } else {
   renderLocations();
   loadCustomer();
+  startTokenCountdown();
 }
 </script>
 </body>
