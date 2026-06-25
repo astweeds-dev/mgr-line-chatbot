@@ -35,10 +35,9 @@ const DELIVERY_LOCATIONS = [
 ];
 
 // เวลาเปิด-ปิดแต่ละหมวด (ชั่วโมง, 24h)
-// TODO: เปลี่ยนกลับหลังทดสอบ → food: 16-24, drinks: 10-24
 const BUSINESS_HOURS = {
-  food:   { open: 0, close: 24, label: "00:00 - 23:59" },
-  drinks: { open: 0, close: 24, label: "00:00 - 23:59" },
+  food:   { open: 16, close: 24, label: "16:00 - 24:00" },
+  drinks: { open: 12, close: 24, label: "12:00 - 24:00" },
 };
 
 // แอดมินกดปิด/เปิดครัว-กาแฟ manual (null = ใช้เวลาปกติ, false = บังคับปิด)
@@ -403,6 +402,26 @@ app.delete("/api/admin/menu/:id", requireAdmin, (req, res) => {
   store.deleteMenuItem(+req.params.id);
   reloadMenuFromDb();
   res.json({ success: true });
+});
+
+// ---- Menu image upload ----
+const MENU_IMG_DIR = path.join(__dirname, "images", "menu");
+if (!fs.existsSync(MENU_IMG_DIR)) fs.mkdirSync(MENU_IMG_DIR, { recursive: true });
+
+app.post("/api/admin/menu-image/:id", requireAdmin, express.json({ limit: "5mb" }), async (req, res) => {
+  try {
+    const id = +req.params.id;
+    const { image } = req.body;
+    if (!image) return res.status(400).json({ error: "No image" });
+    const buf = Buffer.from(image.replace(/^data:image\/\w+;base64,/, ""), "base64");
+    const fname = `menu-${id}.jpg`;
+    await sharp(buf).resize(400, 400, { fit: "cover" }).jpeg({ quality: 80 }).toFile(path.join(MENU_IMG_DIR, fname));
+    const imageUrl = `/images/menu/${fname}`;
+    res.json({ success: true, imageUrl });
+  } catch (e) {
+    console.error("Menu image upload error:", e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ==================== Admin Shop Status (ปิด/เปิดครัว-กาแฟ) ====================

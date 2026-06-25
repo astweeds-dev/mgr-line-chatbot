@@ -60,6 +60,7 @@ db.exec(`
 try { db.exec(`ALTER TABLE orders ADD COLUMN orderStatus TEXT DEFAULT 'none'`); } catch {}
 try { db.exec(`ALTER TABLE orders ADD COLUMN statusEta INTEGER DEFAULT 0`); } catch {}
 try { db.exec(`ALTER TABLE orders ADD COLUMN statusAt INTEGER DEFAULT 0`); } catch {}
+try { db.exec(`ALTER TABLE menu_items ADD COLUMN imageUrl TEXT DEFAULT ''`); } catch {}
 
 
 // สถานะที่ยัง "ค้าง" — โหลดกลับเข้าหน่วยความจำตอน boot
@@ -157,11 +158,11 @@ function loadSessions() {
 
 // ---- Menu ----
 const stmtUpsertMenu = db.prepare(`
-  INSERT INTO menu_items (id, cat, nameTh, nameEn, price, addons, level, levelLabel, variantLabel, sortOrder, enabled)
-  VALUES (@id, @cat, @nameTh, @nameEn, @price, @addons, @level, @levelLabel, @variantLabel, @sortOrder, @enabled)
+  INSERT INTO menu_items (id, cat, nameTh, nameEn, price, addons, level, levelLabel, variantLabel, sortOrder, enabled, imageUrl)
+  VALUES (@id, @cat, @nameTh, @nameEn, @price, @addons, @level, @levelLabel, @variantLabel, @sortOrder, @enabled, @imageUrl)
   ON CONFLICT(id) DO UPDATE SET
     cat=@cat, nameTh=@nameTh, nameEn=@nameEn, price=@price, addons=@addons,
-    level=@level, levelLabel=@levelLabel, variantLabel=@variantLabel, sortOrder=@sortOrder, enabled=@enabled
+    level=@level, levelLabel=@levelLabel, variantLabel=@variantLabel, sortOrder=@sortOrder, enabled=@enabled, imageUrl=@imageUrl
 `);
 const stmtDeleteMenu = db.prepare(`DELETE FROM menu_items WHERE id = ?`);
 const stmtLoadMenu = db.prepare(`SELECT * FROM menu_items ORDER BY sortOrder, id`);
@@ -179,6 +180,7 @@ function saveMenuItem(item) {
     variantLabel: item.variantLabel || "",
     sortOrder: item.sortOrder || 0,
     enabled: item.enabled !== undefined ? (item.enabled ? 1 : 0) : 1,
+    imageUrl: item.imageUrl || "",
   });
 }
 
@@ -197,6 +199,7 @@ function loadMenuItems() {
     variantLabel: r.variantLabel,
     sortOrder: r.sortOrder,
     enabled: !!r.enabled,
+    imageUrl: r.imageUrl || "",
   }));
 }
 

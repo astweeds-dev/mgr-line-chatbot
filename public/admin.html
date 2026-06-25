@@ -113,6 +113,18 @@ body{font-family:'Sarabun',sans-serif;background:#f5f5f0;color:#333;min-height:1
 .modal-actions button{flex:1;padding:12px;border-radius:10px;font-size:15px;font-weight:700;border:none;cursor:pointer;font-family:inherit}
 .btn-save{background:#27AE60;color:#fff}
 .btn-cancel{background:#f0f0f0;color:#666}
+.price-type-btn{padding:8px 14px;border-radius:8px;font-size:13px;font-weight:700;border:1.5px solid #e8e4cc;background:#fff;color:#666;cursor:pointer;font-family:inherit}
+.price-type-btn.active{background:#F9E84A;color:#5A4F00;border-color:#5A4F00}
+.price-row,.addon-row{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+.price-row input,.addon-row input{flex:1;padding:8px;border-radius:8px;border:1.5px solid #e8e4cc;font-size:13px;font-family:inherit}
+.price-row input:focus,.addon-row input:focus{outline:none;border-color:#F9E84A}
+.btn-row-del{width:32px;height:32px;border-radius:8px;border:none;background:#FDEAEA;color:#E74C3C;font-size:16px;cursor:pointer;flex-shrink:0}
+.btn-row-move{width:28px;height:28px;border-radius:6px;border:none;background:#f0f0f0;color:#666;font-size:14px;cursor:pointer;flex-shrink:0}
+.btn-row-move:active{background:#e0e0e0;transform:scale(.9)}
+.row-move-group{display:flex;flex-direction:column;gap:2px;flex-shrink:0}
+.preset-btn{padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;border:1.5px solid #e8e4cc;background:#fff;color:#666;cursor:pointer;font-family:inherit}
+.preset-btn:active{transform:scale(.95)}
+.mc-img{width:44px;height:44px;border-radius:8px;object-fit:cover;margin-right:10px;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -159,10 +171,20 @@ body{font-family:'Sarabun',sans-serif;background:#f5f5f0;color:#333;min-height:1
 <div class="modal-overlay" id="menu-modal">
   <div class="modal-box">
     <h3 id="menu-modal-title">เพิ่มเมนู</h3>
+
+    <!-- รูปเมนู -->
+    <div class="form-group" style="text-align:center">
+      <div id="mf-img-preview" style="width:100px;height:100px;border-radius:12px;background:#f0f0f0;margin:0 auto 8px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1.5px dashed #ccc">
+        <span style="font-size:32px;color:#ccc" id="mf-img-placeholder">📷</span>
+      </div>
+      <button type="button" onclick="document.getElementById('mf-img-input').click()" style="padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;background:#FFF3E0;color:#E65100;border:none;cursor:pointer">เลือกรูปเมนู</button>
+      <input type="file" id="mf-img-input" accept="image/*" style="display:none" onchange="previewMenuImg(this)">
+    </div>
+
     <div class="form-row">
       <div class="form-group"><label>ID</label><input type="number" id="mf-id"></div>
       <div class="form-group"><label>หมวด</label>
-        <select id="mf-cat">
+        <select id="mf-cat" onchange="onCatChange()">
           <option value="food">อาหาร</option>
           <option value="coffee">กาแฟ</option>
           <option value="milk">นม & ชา</option>
@@ -171,16 +193,45 @@ body{font-family:'Sarabun',sans-serif;background:#f5f5f0;color:#333;min-height:1
       </div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>ชื่อ (ไทย)</label><input type="text" id="mf-nameTh"></div>
-      <div class="form-group"><label>ชื่อ (EN)</label><input type="text" id="mf-nameEn"></div>
+      <div class="form-group"><label>ชื่อ (ไทย)</label><input type="text" id="mf-nameTh" placeholder="เช่น ผัดกะเพรา"></div>
+      <div class="form-group"><label>ชื่อ (EN)</label><input type="text" id="mf-nameEn" placeholder="e.g. Stir-fried Basil"></div>
     </div>
-    <div class="form-group"><label>ราคา (JSON เช่น {"default":70} หรือ {"หมู":70,"เนื้อ":80})</label><input type="text" id="mf-price" placeholder='{"default":70}'></div>
-    <div class="form-group"><label>Add-ons (JSON array เช่น [{"id":"น้ำผึ้ง","price":10}])</label><textarea id="mf-addons" rows="2" placeholder="[]"></textarea></div>
-    <div class="form-group"><label>Level (JSON array เช่น ["เผ็ดน้อย","เผ็ดปกติ","เผ็ดมาก"])</label><textarea id="mf-level" rows="2" placeholder="[]"></textarea></div>
-    <div class="form-row">
-      <div class="form-group"><label>Level Label</label><input type="text" id="mf-levelLabel" placeholder="ระดับความเผ็ด"></div>
-      <div class="form-group"><label>Variant Label</label><input type="text" id="mf-variantLabel" placeholder="เนื้อสัตว์"></div>
+
+    <!-- ราคา: แบบเลือกเนื้อ หรือราคาเดียว -->
+    <div class="form-group">
+      <label>ราคา</label>
+      <div id="mf-price-type-row" style="display:flex;gap:8px;margin-bottom:8px">
+        <button type="button" class="price-type-btn active" id="pt-single" onclick="setPriceType('single')">ราคาเดียว</button>
+        <button type="button" class="price-type-btn" id="pt-variant" onclick="setPriceType('variant')">แยกตามเนื้อสัตว์/ตัวเลือก</button>
+      </div>
+      <div id="mf-price-single">
+        <input type="number" id="mf-price-default" placeholder="ราคา เช่น 70" style="width:120px">
+      </div>
+      <div id="mf-price-variant" style="display:none">
+        <div id="mf-price-rows"></div>
+        <button type="button" onclick="addPriceRow()" style="margin-top:6px;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;background:#E8F5E9;color:#2E7D32;border:none;cursor:pointer">+ เพิ่มตัวเลือก</button>
+      </div>
     </div>
+
+    <!-- Addons -->
+    <div class="form-group" id="mf-addons-section">
+      <label>ท็อปปิ้ง / Add-ons</label>
+      <div id="mf-addon-rows"></div>
+      <button type="button" onclick="addAddonRow()" style="margin-top:6px;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;background:#E8F5E9;color:#2E7D32;border:none;cursor:pointer">+ เพิ่ม add-on</button>
+    </div>
+
+    <!-- ระดับ (เผ็ด/หวาน) -->
+    <div class="form-group" id="mf-level-section">
+      <label>ระดับ (เผ็ด/หวาน)</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px" id="mf-level-presets">
+        <button type="button" class="preset-btn" onclick="setLevelPreset('spicy')">🌶️ ความเผ็ด</button>
+        <button type="button" class="preset-btn" onclick="setLevelPreset('sweet')">🍯 ความหวาน</button>
+        <button type="button" class="preset-btn" onclick="setLevelPreset('none')">ไม่มี</button>
+      </div>
+      <input type="text" id="mf-levelLabel" placeholder="ชื่อ เช่น ระดับความเผ็ด" style="margin-bottom:4px">
+      <div id="mf-level-tags" style="font-size:13px;color:#888;margin-top:4px"></div>
+    </div>
+
     <div class="form-row">
       <div class="form-group"><label>ลำดับ</label><input type="number" id="mf-sortOrder" value="0"></div>
       <div class="form-group"><label>เปิดใช้</label>
@@ -189,7 +240,7 @@ body{font-family:'Sarabun',sans-serif;background:#f5f5f0;color:#333;min-height:1
     </div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeMenuModal()">ยกเลิก</button>
-      <button class="btn-save" onclick="saveMenu()">บันทึก</button>
+      <button class="btn-save" onclick="saveMenu()">💾 บันทึก</button>
     </div>
   </div>
 </div>
@@ -460,7 +511,9 @@ function renderMenu() {
       html += `<h3 style="padding:8px 4px;font-size:15px;color:#5A4F00">${CAT_LABELS[cat] || cat}</h3>`;
       for (const item of items) {
         const priceText = Object.entries(item.price).map(([k,v]) => k === "default" ? `฿${v}` : `${k} ฿${v}`).join(" / ");
-        html += `<div class="menu-card ${item.enabled ? '' : 'disabled'}">
+        const imgHtml = item.imageUrl ? `<img class="mc-img" src="${item.imageUrl}">` : "";
+      html += `<div class="menu-card ${item.enabled ? '' : 'disabled'}">
+          ${imgHtml}
           <div class="mc-left">
             <div class="mc-name">${esc(item.nameTh)} <small style="color:#888">${esc(item.nameEn)}</small></div>
             <div class="mc-price">${priceText}</div>
@@ -478,27 +531,206 @@ function renderMenu() {
 }
 
 let editingMenuId = null;
+let menuPriceType = "single";
+let menuLevelArr = [];
+let menuImgFile = null;
+
+const SPICY_LEVELS = ["เผ็ดน้อย", "เผ็ดปกติ", "เผ็ดมาก"];
+const SWEET_LEVELS = ["หวานน้อย", "หวานปกติ", "หวานมาก"];
+
+function setPriceType(type) {
+  menuPriceType = type;
+  document.getElementById("pt-single").classList.toggle("active", type === "single");
+  document.getElementById("pt-variant").classList.toggle("active", type === "variant");
+  document.getElementById("mf-price-single").style.display = type === "single" ? "" : "none";
+  document.getElementById("mf-price-variant").style.display = type === "variant" ? "" : "none";
+}
+
+function moveRow(btn, dir) {
+  const row = btn.closest(".price-row, .addon-row");
+  const parent = row.parentElement;
+  if (dir === -1 && row.previousElementSibling) parent.insertBefore(row, row.previousElementSibling);
+  else if (dir === 1 && row.nextElementSibling) parent.insertBefore(row.nextElementSibling, row);
+}
+
+function addPriceRow(name, price) {
+  const el = document.getElementById("mf-price-rows");
+  const row = document.createElement("div");
+  row.className = "price-row";
+  row.innerHTML = `<div class="row-move-group"><button type="button" class="btn-row-move" onclick="moveRow(this,-1)">▲</button><button type="button" class="btn-row-move" onclick="moveRow(this,1)">▼</button></div><input type="text" placeholder="ชื่อ เช่น หมู" value="${esc(name || "")}"><input type="number" placeholder="ราคา" value="${price || ""}" style="width:80px;flex:none"><button type="button" class="btn-row-del" onclick="this.parentElement.remove()">✕</button>`;
+  el.appendChild(row);
+}
+
+function addAddonRow(name, price) {
+  const el = document.getElementById("mf-addon-rows");
+  const row = document.createElement("div");
+  row.className = "addon-row";
+  row.innerHTML = `<div class="row-move-group"><button type="button" class="btn-row-move" onclick="moveRow(this,-1)">▲</button><button type="button" class="btn-row-move" onclick="moveRow(this,1)">▼</button></div><input type="text" placeholder="ชื่อ เช่น ไข่ดาว" value="${esc(name || "")}"><input type="number" placeholder="ราคา" value="${price || ""}" style="width:80px;flex:none"><button type="button" class="btn-row-del" onclick="this.parentElement.remove()">✕</button>`;
+  el.appendChild(row);
+}
+
+function setLevelPreset(type) {
+  if (type === "spicy") { menuLevelArr = [...SPICY_LEVELS]; document.getElementById("mf-levelLabel").value = "ระดับความเผ็ด"; }
+  else if (type === "sweet") { menuLevelArr = [...SWEET_LEVELS]; document.getElementById("mf-levelLabel").value = "ระดับความหวาน"; }
+  else { menuLevelArr = []; document.getElementById("mf-levelLabel").value = ""; }
+  renderLevelTags();
+}
+
+function renderLevelTags() {
+  const el = document.getElementById("mf-level-tags");
+  if (!menuLevelArr.length) { el.textContent = "(ไม่มี)"; return; }
+  el.textContent = menuLevelArr.join(" → ");
+}
+
+function previewMenuImg(input) {
+  const file = input.files[0];
+  if (!file) return;
+  menuImgFile = file;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const preview = document.getElementById("mf-img-preview");
+    preview.innerHTML = `<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover">`;
+  };
+  reader.readAsDataURL(file);
+}
+
+function onCatChange() {
+  const cat = document.getElementById("mf-cat").value;
+  const isFood = cat === "food";
+  const isCoffee = cat === "coffee";
+  const isMilk = cat === "milk";
+
+  // preset addons ตามหมวด
+  document.getElementById("mf-addon-rows").innerHTML = "";
+  if (isFood) {
+    addAddonRow("ไข่ดาว", 15); addAddonRow("ไข่เจียว", 20); addAddonRow("พิเศษ", 20);
+    setLevelPreset("spicy");
+  } else if (isCoffee) {
+    addAddonRow("น้ำผึ้ง", 10); addAddonRow("คาราเมลไซรัป", 10); addAddonRow("นมโอ๊ต", 20); addAddonRow("เพิ่มช็อต", 20);
+    setLevelPreset("sweet");
+  } else if (isMilk) {
+    addAddonRow("น้ำผึ้ง", 10); addAddonRow("คาราเมลไซรัป", 10);
+    setLevelPreset("sweet");
+  } else {
+    setLevelPreset("none");
+  }
+}
 
 function openMenuModal(item) {
   editingMenuId = item ? item.id : null;
-  document.getElementById("menu-modal-title").textContent = item ? "แก้ไขเมนู" : "เพิ่มเมนูใหม่";
+  menuImgFile = null;
+  document.getElementById("mf-img-input").value = "";
+  document.getElementById("menu-modal-title").textContent = item ? "✏️ แก้ไขเมนู" : "➕ เพิ่มเมนูใหม่";
   document.getElementById("mf-id").value = item ? item.id : "";
   document.getElementById("mf-id").disabled = !!item;
   document.getElementById("mf-cat").value = item ? item.cat : "food";
   document.getElementById("mf-nameTh").value = item ? item.nameTh : "";
   document.getElementById("mf-nameEn").value = item ? item.nameEn : "";
-  document.getElementById("mf-price").value = item ? JSON.stringify(item.price) : '{"default":70}';
-  document.getElementById("mf-addons").value = item ? JSON.stringify(item.addons) : "[]";
-  document.getElementById("mf-level").value = item ? JSON.stringify(item.level) : "[]";
-  document.getElementById("mf-levelLabel").value = item ? item.levelLabel : "";
-  document.getElementById("mf-variantLabel").value = item ? item.variantLabel : "";
   document.getElementById("mf-sortOrder").value = item ? item.sortOrder : 0;
   document.getElementById("mf-enabled").value = item ? (item.enabled ? "1" : "0") : "1";
+
+  // รูป
+  const preview = document.getElementById("mf-img-preview");
+  if (item && item.imageUrl) {
+    preview.innerHTML = `<img src="${item.imageUrl}" style="width:100%;height:100%;object-fit:cover">`;
+  } else {
+    preview.innerHTML = `<span style="font-size:32px;color:#ccc">📷</span>`;
+  }
+
+  // ราคา
+  if (item) {
+    const keys = Object.keys(item.price);
+    if (keys.length === 1 && keys[0] === "default") {
+      setPriceType("single");
+      document.getElementById("mf-price-default").value = item.price.default;
+      document.getElementById("mf-price-rows").innerHTML = "";
+    } else {
+      setPriceType("variant");
+      document.getElementById("mf-price-default").value = "";
+      document.getElementById("mf-price-rows").innerHTML = "";
+      for (const [k, v] of Object.entries(item.price)) addPriceRow(k, v);
+    }
+  } else {
+    setPriceType("single");
+    document.getElementById("mf-price-default").value = "";
+    document.getElementById("mf-price-rows").innerHTML = "";
+  }
+
+  // Addons
+  document.getElementById("mf-addon-rows").innerHTML = "";
+  if (item && item.addons && item.addons.length) {
+    for (const a of item.addons) addAddonRow(a.id, a.price);
+  } else if (!item) {
+    onCatChange();
+    return document.getElementById("menu-modal").classList.add("show");
+  }
+
+  // Level
+  if (item && item.level && item.level.length) {
+    menuLevelArr = [...item.level];
+    document.getElementById("mf-levelLabel").value = item.levelLabel || "";
+  } else {
+    menuLevelArr = [];
+    document.getElementById("mf-levelLabel").value = "";
+  }
+  renderLevelTags();
+
   document.getElementById("menu-modal").classList.add("show");
 }
 
 function closeMenuModal() {
   document.getElementById("menu-modal").classList.remove("show");
+}
+
+function collectPrice() {
+  if (menuPriceType === "single") {
+    const v = parseInt(document.getElementById("mf-price-default").value);
+    if (!v || v <= 0) throw new Error("กรุณากรอกราคา");
+    return { default: v };
+  }
+  const rows = document.getElementById("mf-price-rows").querySelectorAll(".price-row");
+  if (!rows.length) throw new Error("กรุณาเพิ่มราคาอย่างน้อย 1 ตัวเลือก");
+  const price = {};
+  for (const row of rows) {
+    const inputs = row.querySelectorAll("input");
+    const name = inputs[0].value.trim();
+    const val = parseInt(inputs[1].value);
+    if (!name || !val) throw new Error("กรุณากรอกชื่อและราคาให้ครบ");
+    price[name] = val;
+  }
+  return price;
+}
+
+function collectAddons() {
+  const rows = document.getElementById("mf-addon-rows").querySelectorAll(".addon-row");
+  const addons = [];
+  for (const row of rows) {
+    const inputs = row.querySelectorAll("input");
+    const name = inputs[0].value.trim();
+    const val = parseInt(inputs[1].value);
+    if (!name || !val) continue;
+    addons.push({ id: name, price: val });
+  }
+  return addons;
+}
+
+async function uploadMenuImage(id) {
+  if (!menuImgFile) return null;
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const r = await api("/api/admin/menu-image/" + id, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: e.target.result })
+        });
+        if (r.error) throw new Error(r.error);
+        resolve(r.imageUrl);
+      } catch (err) { reject(err); }
+    };
+    reader.readAsDataURL(menuImgFile);
+  });
 }
 
 async function saveMenu() {
@@ -508,15 +740,25 @@ async function saveMenu() {
       cat: document.getElementById("mf-cat").value,
       nameTh: document.getElementById("mf-nameTh").value.trim(),
       nameEn: document.getElementById("mf-nameEn").value.trim(),
-      price: JSON.parse(document.getElementById("mf-price").value),
-      addons: JSON.parse(document.getElementById("mf-addons").value || "[]"),
-      level: JSON.parse(document.getElementById("mf-level").value || "[]"),
+      price: collectPrice(),
+      addons: collectAddons(),
+      level: menuLevelArr,
       levelLabel: document.getElementById("mf-levelLabel").value.trim(),
-      variantLabel: document.getElementById("mf-variantLabel").value.trim(),
+      variantLabel: menuPriceType === "variant" ? document.getElementById("mf-levelLabel").value.trim() : "",
       sortOrder: parseInt(document.getElementById("mf-sortOrder").value) || 0,
       enabled: document.getElementById("mf-enabled").value === "1",
     };
     if (!item.id || !item.nameTh) throw new Error("กรุณากรอก ID และชื่อ");
+
+    // อัปโหลดรูปก่อน (ถ้ามี)
+    if (menuImgFile) {
+      const url = await uploadMenuImage(item.id);
+      if (url) item.imageUrl = url;
+    } else {
+      const existing = menuItems.find(m => m.id === item.id);
+      if (existing) item.imageUrl = existing.imageUrl || "";
+    }
+
     const r = await api("/api/admin/menu", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -524,7 +766,7 @@ async function saveMenu() {
     });
     if (r.error) throw new Error(r.error);
     closeMenuModal();
-    showToast("บันทึกเมนูแล้ว");
+    showToast("บันทึกเมนูแล้ว ✅");
     loadMenu();
   } catch (e) { showToast(e.message, true); }
 }

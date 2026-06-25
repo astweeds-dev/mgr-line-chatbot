@@ -308,35 +308,32 @@ async function monitor() {
   isRestarting = false;
 }
 
-// ==================== Slip Cleanup (ลบสลิปเก่ากว่า 30 วัน) ====================
+// ==================== Slip Count Monitor (แจ้งเตือนเมื่อสลิปเกิน 100) ====================
 
 const SLIP_DIR = path.join(DIR, "images", "slips");
+const SLIP_WARN_THRESHOLD = 100;
+let slipAlertSent = false;
 
-function cleanOldSlips(daysToKeep = 30) {
+function checkSlipCount() {
   try {
     if (!fs.existsSync(SLIP_DIR)) return;
-    const cutoff = Date.now() - daysToKeep * 24 * 60 * 60 * 1000;
-    const files = fs.readdirSync(SLIP_DIR);
-    let deleted = 0;
-    for (const f of files) {
-      const fp = path.join(SLIP_DIR, f);
-      try {
-        const st = fs.statSync(fp);
-        if (!st.isFile()) continue;
-        if (st.mtimeMs < cutoff) {
-          fs.unlinkSync(fp);
-          deleted++;
-        }
-      } catch {}
+    const count = fs.readdirSync(SLIP_DIR).filter(f => {
+      try { return fs.statSync(path.join(SLIP_DIR, f)).isFile(); } catch { return false; }
+    }).length;
+    if (count > SLIP_WARN_THRESHOLD && !slipAlertSent) {
+      log(`[SLIP] Slip count: ${count} (over ${SLIP_WARN_THRESHOLD})`);
+      sendAlert(`📂 สลิปโอนเงินมี ${count} ไฟล์แล้ว (เกิน ${SLIP_WARN_THRESHOLD})\nกรุณาตรวจสอบพื้นที่เครื่องครับ`);
+      slipAlertSent = true;
+    } else if (count <= SLIP_WARN_THRESHOLD) {
+      slipAlertSent = false;
     }
-    if (deleted > 0) log(`[CLEANUP] Deleted ${deleted} slip(s) older than ${daysToKeep} days`);
   } catch (e) {
-    log(`[CLEANUP] Error: ${e.message}`);
+    log(`[SLIP] Error: ${e.message}`);
   }
 }
 
-// ทำงานสัปดาห์ละครั้ง (7 วัน)
-setInterval(() => cleanOldSlips(30), 7 * 24 * 60 * 60 * 1000);
+// ตรวจทุกวัน
+setInterval(checkSlipCount, 24 * 60 * 60 * 1000);
 
 // ==================== Resource Monitoring (Memory) ====================
 
@@ -367,7 +364,7 @@ setInterval(checkResources, 30 * 60 * 1000);
 
 function shutdown() {
   log("Watchdog shutting down...");
-  sendAlert("🔴 ระบบ MGR ปิดตัวลง").finally(() => {
+  sendAlert("🔴 ระบบ MGR ปิดแล้วน้าาาา").finally(() => {
     killProc(serverProc);
     killProc(tunnelProc);
     process.exit(0);
@@ -420,7 +417,7 @@ async function main() {
   setInterval(monitor, CHECK_INTERVAL);
 
   // ทำความสะอาดสลิปเก่าตอนเริ่มต้น + ตรวจ resource ครั้งแรก
-  cleanOldSlips(30);
+  checkSlipCount();
   checkResources();
 }
 
