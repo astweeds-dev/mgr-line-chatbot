@@ -1491,14 +1491,31 @@ async function pollShopStatus() {
   try {
     const r = await fetch("/api/menu");
     const d = await r.json();
+    if (!d) return;
+
+    let needRender = false;
+
     if (d.closed) {
       const changed = serverClosed.food !== d.closed.food || serverClosed.drinks !== d.closed.drinks;
       serverClosed = d.closed;
-      if (changed) {
-        checkShopClosed();
-        if (document.getElementById("v-menu").classList.contains("active")) renderMenu();
-      }
+      if (changed) { checkShopClosed(); needRender = true; }
     }
+
+    if (d.source === "db" && Array.isArray(d.items) && d.items.length) {
+      const newMenu = d.items.map(it => ({
+        id: it.id, cat: it.cat,
+        name: { th: it.nameTh, en: it.nameEn },
+        price: it.price, addons: it.addons || [],
+        level: it.level || [], levelLabel: it.levelLabel || "",
+        variantLabel: it.variantLabel || "", allowNote: true,
+        enabled: it.enabled !== false,
+      }));
+      const oldKey = MENU.map(m => m.id + ":" + (m.enabled !== false)).join(",");
+      const newKey = newMenu.map(m => m.id + ":" + (m.enabled !== false)).join(",");
+      if (oldKey !== newKey) { MENU = newMenu; needRender = true; }
+    }
+
+    if (needRender && document.getElementById("v-menu").classList.contains("active")) renderMenu();
   } catch {}
 }
 setInterval(pollShopStatus, 30000);
