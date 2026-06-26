@@ -106,7 +106,13 @@ echo ============================================
 echo   DEV MODE - All services running!
 echo   - Server:  http://localhost:%DEV_PORT%
 if defined TUNNEL_URL echo   - Tunnel:  %TUNNEL_URL%
-if defined ADMIN_TOKEN echo   - Admin:   http://localhost:%DEV_PORT%/admin.html?token=%ADMIN_TOKEN%
+echo.
+echo   Links:
+if defined TUNNEL_URL echo   - Order:   %TUNNEL_URL%/order.html
+if defined TUNNEL_URL if defined ADMIN_TOKEN echo   - Admin:   %TUNNEL_URL%/admin.html?token=%ADMIN_TOKEN%
+echo   - Order (local):  http://localhost:%DEV_PORT%/order.html
+if defined ADMIN_TOKEN echo   - Admin (local):  http://localhost:%DEV_PORT%/admin.html?token=%ADMIN_TOKEN%
+echo.
 echo   - Webhook: auto-updated (DEV channel)
 echo   - Monitor: checking every 30 seconds
 echo.

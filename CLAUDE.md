@@ -17,6 +17,7 @@ images/qr-payment.jpg      # PromptPay QR code for payment
 images/slips/              # Customer payment slips (gitignored)
 db.js                      # SQLite persistence layer (orders + sessions)
 slipok.js                  # SlipOK slip verification (optional, auto-confirm)
+google-apps-script.js      # Reference: Google Apps Script code for Sheet (deploy in Google)
 watchdog.js                # Production watchdog — manages server+tunnel, auto-restart, LINE alerts, logging
 data/mgr.{env}.db          # SQLite database (gitignored — runtime state)
 data/counter.{env}.json    # Order counter persistence (survives restart)
@@ -24,7 +25,7 @@ data/watchdog.log          # Watchdog event log (auto-rotated at 5MB)
 setup-rich-menu.js         # Creates 2-button Rich Menu (Food-Drinks/Contact)
 update-webhook.js          # Sets LINE webhook URL
 start-all.bat              # Production: runs watchdog.js (auto-restart loop)
-start-dev.bat              # Dev: server + tunnel + webhook (no watchdog)
+start-dev.bat              # Dev: server + tunnel + webhook (no watchdog, port 4001, safe — won't kill production)
 setup-autostart.bat        # Creates Windows Task Scheduler task for auto-start on boot
 setup-named-tunnel.bat     # Interactive: creates Cloudflare Named Tunnel for fixed URL
 ```
@@ -36,8 +37,11 @@ Two environments are fully separated:
 |---|---|---|
 | ENV file | `.env` | `.env.development` |
 | LINE Channel | MGR Main bot | MGR Dev (separate channel) |
-| Run command | `start-all.bat` | `start-dev.bat` or `npm run dev` |
+| Port | 3000 | 4001 |
+| Run command | `start-all.bat` | `start-dev.bat` |
 | Webhook | Auto-updated by watchdog | Auto-updated by start-dev.bat |
+| Database | `data/mgr.production.db` | `data/mgr.development.db` |
+| Log files | `server.log` / `tunnel.log` | `server-dev.log` / `tunnel-dev.log` |
 
 `app.js` auto-selects env file based on `NODE_ENV`:
 ```js
@@ -118,6 +122,25 @@ Node.js process that manages the entire production stack:
 - `start-all.bat` wraps watchdog.js in a restart loop (if watchdog itself crashes, it restarts)
 - `setup-autostart.bat` creates Windows Task Scheduler task → system starts on boot (run as admin)
 
+## Google Sheets Integration (added 2026-06-26)
+Auto-logs delivered orders to Google Sheet "MGR รายรับ" via Apps Script Web App.
+- **Trigger**: when order status changes to `delivered` (both admin dashboard and LINE postback)
+- **Data logged**: date, Order ID, customer name, phone, delivery location, items, total, status
+- **Status values**: `delivered` (normal) / `FREE` (VIP orders)
+- **Config**: `GOOGLE_SHEET_URL` in `.env` / `.env.development`
+- **Apps Script code**: `google-apps-script.js` (reference — deployed in Google Sheet > Extensions > Apps Script)
+- **Sheet**: "MGR รายรับ" → tab "Orders" (auto-created with header row)
+
+## VIP Free Ordering (added 2026-06-26)
+Designated LINE User IDs can order without payment or required delivery fields.
+- **Config**: `VIP_USER_IDS` in `.env` (comma-separated LINE User IDs)
+- **VIP names**: hardcoded in `VIP_NAMES` object in `app.js`
+- **Current VIPs**:
+  - `U74a59d110f840bbeb9091c135de5660c` → G Owner
+  - `U34c40f2479ce1604c7106c5dddfc7716` → DEV
+- **VIP flow**: select menu → confirm → order auto-confirmed (skip payment) → notify via LINE → log to Sheet with status "FREE"
+- **No impact on normal customers** — all VIP checks are behind `isVip` flag
+
 ## Security
 - **Rate limiting**: API endpoints limited to 60 req/min/IP; slip upload limited to 10 req/min/IP
 - LINE webhook signature verification (built-in via @line/bot-sdk middleware)
@@ -158,6 +181,8 @@ Web-based admin panel for managing orders and menu:
 | GET | /api/admin/token | none (dev only) | Get admin token |
 | GET | /api/menu | none | Public menu API |
 | GET | /api/order-tracking | slipToken | Customer order status |
+| GET | /api/env | none | Returns { dev: true/false } |
+| GET | /api/customer | token | Get saved customer info + VIP flag |
 
 ## Named Tunnel Setup
 For a fixed URL (no random URL on each restart):
@@ -170,8 +195,18 @@ For a fixed URL (no random URL on each restart):
    ```
 4. Watchdog will auto-detect Named Tunnel config and use fixed URL
 
+## DEV Safety (updated 2026-06-26)
+`start-dev.bat` is designed to **never affect production**:
+- Uses **port 4001** (production uses 3000) — can run simultaneously
+- Kills only processes on DEV port, **never `taskkill /im node.exe`**
+- Separate log files (`server-dev.log`, `tunnel-dev.log`)
+- **Does NOT use watchdog.js** (which hardcodes `.env` production)
+- Shows order page + admin dashboard links on startup
+
+**CRITICAL**: Never run `node app.js` or `node watchdog.js` directly for DEV — always use `start-dev.bat` which sets `NODE_ENV=development`
+
 ## Status
-Project is **feature-complete** — ordering, payment, slip verification, order tracking, admin dashboard, menu management, watchdog, and auto-start are all working.
+Project is **feature-complete** — ordering, payment, slip verification, order tracking, admin dashboard, menu management, Google Sheets logging, VIP ordering, watchdog, and auto-start are all working.
 
 **Optional future upgrades** (not blocking):
 - Named Tunnel (fixed URL, requires Cloudflare domain ~350 baht/year) — `setup-named-tunnel.bat` ready
