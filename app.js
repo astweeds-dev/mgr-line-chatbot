@@ -40,11 +40,12 @@ const BUSINESS_HOURS = {
   drinks: { open: 12, close: 24, label: "12:00 - 24:00" },
 };
 
-// แอดมินกดปิด/เปิดครัว-กาแฟ manual (null = ใช้เวลาปกติ, false = บังคับปิด)
+// แอดมินกดปิด/เปิดครัว-กาแฟ manual (null = ใช้เวลาปกติ, false = บังคับปิด, true = บังคับเปิด)
 const manualOverride = { food: null, drinks: null };
 
 function isSectionOpen(section) {
   if (manualOverride[section] === false) return false;
+  if (manualOverride[section] === true) return true;
   const hour = new Date().getHours();
   const h = BUSINESS_HOURS[section];
   return h && hour >= h.open && hour < h.close;
@@ -436,7 +437,7 @@ app.get("/api/admin/shop-status", requireAdmin, (_req, res) => {
 app.post("/api/admin/shop-status", requireAdmin, express.json(), (req, res) => {
   const { section, closed } = req.body;
   if (section !== "food" && section !== "drinks") return res.status(400).json({ error: "Invalid section" });
-  manualOverride[section] = closed ? false : null;
+  manualOverride[section] = closed ? false : true;
   const label = section === "food" ? "ครัว" : "เครื่องดื่ม/กาแฟ";
   console.log(`[ADMIN] ${label} ${closed ? "ปิด" : "เปิด"} (manual override)`);
   res.json({ success: true, section, closed: !!closed });

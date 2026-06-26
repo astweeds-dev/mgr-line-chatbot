@@ -1542,7 +1542,7 @@ async function pollShopStatus() {
     if (needRender && document.getElementById("v-menu").classList.contains("active")) renderMenu();
   } catch {}
 }
-setInterval(pollShopStatus, 30000);
+setInterval(pollShopStatus, 10000);
 
 // ==================== TOKEN COUNTDOWN ====================
 const TOKEN_TTL_MS = 30 * 60 * 1000;
@@ -1596,6 +1596,7 @@ updateLangBtn();
 applyStaticText();
 loadMenu().then(() => {
   checkShopClosed();
+  renderShopStatus();
   if (document.getElementById("v-menu").classList.contains("active")) renderMenu();
 });
 const resumeOid = _params.get("oid");
@@ -1607,7 +1608,6 @@ if (resumeOid && resumeS) {
   loadCustomer();
   startTokenCountdown();
 }
-renderShopStatus();
 </script>
 </body>
 </html>
