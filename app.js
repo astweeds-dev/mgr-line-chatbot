@@ -16,6 +16,7 @@ const config = {
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
 };
 const ADMIN_ID = process.env.ADMIN_USER_ID;
+const GOOGLE_SHEET_URL = process.env.GOOGLE_SHEET_URL;
 // ปลายทางแจ้งเตือน: กลุ่ม LINE ถ้าตั้งไว้ ไม่งั้นส่งหาเจ้าของคนเดียว (ADMIN_ID ยังใช้เช็คสิทธิ์ปุ่ม postback)
 const ALERT_TARGET = process.env.ALERT_GROUP_ID || process.env.ADMIN_USER_ID;
 function getBaseUrl() {
@@ -60,6 +61,28 @@ function deliveryText(order) {
   const d = order && order.delivery;
   if (!d) return "";
   return `📍 ${d.location}\n👤 ${d.name}  📞 ${d.phone}`;
+}
+
+function logToSheet(orderId, order) {
+  if (!GOOGLE_SHEET_URL) return;
+  const d = order.delivery || {};
+  const body = JSON.stringify({
+    date: new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }),
+    orderId: String(orderId),
+    customerName: d.name || "",
+    phone: d.phone || "",
+    location: d.location || "",
+    items: order.summary || "",
+    total: order.total || 0,
+    status: "delivered",
+  });
+  fetch(GOOGLE_SHEET_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
+    body,
+    redirect: "follow",
+  }).then(r => console.log(`[SHEET] order #${orderId} logged (${r.status})`))
+    .catch(e => console.error(`[SHEET] error:`, e.message));
 }
 
 const SLIP_DIR = path.join(__dirname, "images", "slips");
@@ -347,6 +370,7 @@ app.post("/api/admin/status", requireAdmin, express.json(), async (req, res) => 
   store.saveOrder(orderId, order);
 
   if (status === "delivered") {
+    logToSheet(orderId, order);
     pendingOrders.delete(orderId);
     const cs = getSession(order.userId);
     cs.state = "idle";
@@ -1407,6 +1431,7 @@ async function handlePostback(replyToken, userId, data) {
     store.saveOrder(orderId, order);
 
     if (status === "delivered") {
+      logToSheet(orderId, order);
       pendingOrders.delete(orderId);
       const cs = getSession(order.userId);
       cs.state = "idle";
