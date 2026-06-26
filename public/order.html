@@ -20,6 +20,7 @@ button{font-family:'Sarabun',sans-serif;cursor:pointer;border:none;outline:none}
 .hero-logo{width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid #F9E84A;box-shadow:0 2px 12px rgba(249,232,74,.35)}
 .hero-name{font-size:18px;font-weight:800;color:#5A4F00;margin-top:8px;letter-spacing:-.3px}
 .hero-badge{display:inline-block;background:#F9E84A;color:#5A4F00;font-size:12px;font-weight:700;padding:3px 12px;border-radius:20px;margin-top:6px}
+
 .hero{position:relative}
 .btn-close-page{position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:50%;background:rgba(0,0,0,.08);color:#5A4F00;font-size:20px;display:flex;align-items:center;justify-content:center;line-height:1;z-index:10}
 .hero-sub{font-size:12px;color:#8a7f33;font-weight:600;margin-top:6px;letter-spacing:.3px}
@@ -247,6 +248,7 @@ button{font-family:'Sarabun',sans-serif;cursor:pointer;border:none;outline:none}
     <img src="/images/mgr%20logo.jpg" alt="MGR" class="hero-logo">
     <div class="hero-name">Merry Go Round Studio</div>
     <span class="hero-badge" data-i18n="tagline">สั่งอาหารและเครื่องดื่ม</span>
+
     <div class="shop-status" id="shop-status"></div>
   </div>
   <div class="start-form">
@@ -275,6 +277,7 @@ button{font-family:'Sarabun',sans-serif;cursor:pointer;border:none;outline:none}
     <img src="/images/mgr%20logo.jpg" alt="MGR" class="hero-logo">
     <div class="hero-name">Merry Go Round Studio</div>
     <span class="hero-badge" data-i18n="tagline">สั่งอาหารและเครื่องดื่ม</span>
+
   </div>
   <div class="delivery-bar" id="delivery-bar" onclick="editDelivery()"></div>
   <div class="cat-tabs" id="cat-tabs"></div>
@@ -429,11 +432,9 @@ let lang = (function () { try { return localStorage.getItem("lang") || "th"; } c
 function L(x) { return x && typeof x === "object" ? (x[lang] || x.th || x.en) : x; }     // ค่าเป็น string หรือ {th,en}
 function disp(map, v) { return (map[v] && map[v][lang]) || v; }                            // ค่าไทย → แสดงตามภาษา
 
-// เวลาเปิด-ปิด (ต้องตรงกับ BUSINESS_HOURS ใน app.js)
-// TODO: เปลี่ยนกลับหลังทดสอบ → food: 16-24, drinks: 10-24
-const BIZ_HOURS = {
-  food:   { open: 0, close: 24, label: { th: "00:00 - 23:59", en: "12:00 AM - 11:59 PM" } },
-  drinks: { open: 0, close: 24, label: { th: "00:00 - 23:59", en: "12:00 AM - 11:59 PM" } },
+let BIZ_HOURS = {
+  food:   { open: 16, close: 24, label: { th: "16:00 - 24:00", en: "4:00 PM - 12:00 AM" } },
+  drinks: { open: 12, close: 24, label: { th: "12:00 - 24:00", en: "12:00 PM - 12:00 AM" } },
 };
 function catSection(catId) { return catId === "food" ? "food" : "drinks"; }
 let serverClosed = { food: false, drinks: false };
@@ -517,7 +518,7 @@ const EXTRAS = [
 ];
 
 // จุดจัดส่งในร้าน — ค่าไทย (ส่ง server) / แสดงผ่าน LOCATION_LABELS
-const LOCATIONS = ["ห้องซ้อมเล็ก", "ห้องซ้อมใหญ่", "ห้องสตูดิโอ", "ลานนั่งหน้ามินิบาร์"];
+let LOCATIONS = ["ห้องซ้อมเล็ก", "ห้องซ้อมใหญ่", "ห้องสตูดิโอ", "ลานนั่งหน้ามินิบาร์"];
 
 // ===== ตารางแปลค่าไทย → แสดงสองภาษา =====
 const VARIANT_LABELS = {
@@ -1347,7 +1348,7 @@ function startTracking() {
         const contactEl = document.getElementById("track-contact");
         let msg = "";
         let showContact = false;
-        const phone = "063-881-0439";
+        const phone = shopSettings.shop_phone || "063-881-0439";
 
         if (st === "delivered") {
           msg = t("trkDone");
@@ -1603,24 +1604,60 @@ function startTokenCountdown() {
   }, 1000);
 }
 
+// ==================== Settings Loader ====================
+let shopSettings = {};
+
+async function loadShopSettings() {
+  try {
+    const r = await fetch("/api/settings");
+    if (!r.ok) return;
+    shopSettings = await r.json();
+    const s = shopSettings;
+    // Update BIZ_HOURS
+    if (s.food_open_hour != null) {
+      const fo = +s.food_open_hour, fc = +s.food_close_hour;
+      const dro = +s.drinks_open_hour, drc = +s.drinks_close_hour;
+      BIZ_HOURS = {
+        food:   { open: fo, close: fc, label: { th: `${String(fo).padStart(2,"0")}:00 - ${String(fc).padStart(2,"0")}:00`, en: `${fo > 12 ? fo-12 : fo || 12}:00 ${fo >= 12 ? "PM" : "AM"} - ${fc > 12 ? fc-12 : fc || 12}:00 ${fc >= 12 ? "PM" : "AM"}` } },
+        drinks: { open: dro, close: drc, label: { th: `${String(dro).padStart(2,"0")}:00 - ${String(drc).padStart(2,"0")}:00`, en: `${dro > 12 ? dro-12 : dro || 12}:00 ${dro >= 12 ? "PM" : "AM"} - ${drc > 12 ? drc-12 : drc || 12}:00 ${drc >= 12 ? "PM" : "AM"}` } },
+      };
+    }
+    // Update LOCATIONS
+    if (s.delivery_locations) {
+      try { LOCATIONS = JSON.parse(s.delivery_locations); } catch {}
+    }
+    // Update DOM elements
+    if (s.shop_name) document.querySelectorAll(".hero-name").forEach(el => el.textContent = s.shop_name);
+    if (s.logo_path) {
+      document.querySelectorAll(".hero-logo, .success-logo").forEach(el => el.src = s.logo_path);
+    }
+    if (s.qr_payment_path) {
+      const qr = document.querySelector(".payment-qr");
+      if (qr) qr.src = s.qr_payment_path;
+    }
+  } catch {}
+}
+
 // ==================== INIT ====================
 try { liff.init({ liffId: new URLSearchParams(location.search).get("liffId") || "" }).catch(() => {}); } catch {}
 updateLangBtn();
 applyStaticText();
-loadMenu().then(() => {
-  checkShopClosed();
-  renderShopStatus();
-  if (document.getElementById("v-menu").classList.contains("active")) renderMenu();
+loadShopSettings().then(() => {
+  loadMenu().then(() => {
+    checkShopClosed();
+    renderShopStatus();
+    if (document.getElementById("v-menu").classList.contains("active")) renderMenu();
+  });
+  const resumeOid = _params.get("oid");
+  const resumeS = _params.get("s");
+  if (resumeOid && resumeS) {
+    resumeOrder(resumeOid, resumeS);
+  } else {
+    renderLocations();
+    loadCustomer();
+    startTokenCountdown();
+  }
 });
-const resumeOid = _params.get("oid");
-const resumeS = _params.get("s");
-if (resumeOid && resumeS) {
-  resumeOrder(resumeOid, resumeS);
-} else {
-  renderLocations();
-  loadCustomer();
-  startTokenCountdown();
-}
 </script>
 </body>
 </html>

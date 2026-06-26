@@ -32,19 +32,46 @@ function getBaseUrl() {
   } catch { return process.env.BASE_URL; }
 }
 
-// จุดจัดส่งในร้าน (ตรงกับ LOCATIONS ใน public/order.html)
-const DELIVERY_LOCATIONS = [
-  "ห้องซ้อมเล็ก",
-  "ห้องซ้อมใหญ่",
-  "ห้องสตูดิโอ",
-  "ลานนั่งหน้ามินิบาร์",
-];
-
-// เวลาเปิด-ปิดแต่ละหมวด (ชั่วโมง, 24h)
-const BUSINESS_HOURS = {
-  food:   { open: 16, close: 24, label: "16:00 - 24:00" },
-  drinks: { open: 12, close: 24, label: "12:00 - 24:00" },
+// ==================== Settings System ====================
+const SETTINGS_DEFAULTS = {
+  shop_name: "Merry Go Round Studio",
+  shop_phone: "063-881-0439",
+  shop_map_url: "https://maps.app.goo.gl/wsXrsjzZJbjNwxTj9",
+  logo_path: "/images/mgr%20logo.jpg",
+  qr_payment_path: "/images/qr-payment.jpg",
+  theme_primary: "#5A4F00",
+  theme_accent: "#F9E84A",
+  theme_bg: "#FFFEF5",
+  theme_success: "#27AE60",
+  food_open_hour: "16",
+  food_close_hour: "24",
+  drinks_open_hour: "12",
+  drinks_close_hour: "24",
+  delivery_locations: JSON.stringify(["ห้องซ้อมเล็ก", "ห้องซ้อมใหญ่", "ห้องสตูดิโอ", "ลานนั่งหน้ามินิบาร์"]),
+  default_eta_minutes: "20",
 };
+
+let settingsCache = {};
+
+function loadSettings() {
+  settingsCache = { ...SETTINGS_DEFAULTS, ...store.getAllSettings() };
+}
+loadSettings();
+
+function setting(key) {
+  return settingsCache[key] ?? SETTINGS_DEFAULTS[key] ?? "";
+}
+
+function getDeliveryLocations() {
+  try { return JSON.parse(setting("delivery_locations")); } catch { return []; }
+}
+
+function getBusinessHours() {
+  return {
+    food:   { open: +setting("food_open_hour"),   close: +setting("food_close_hour"),   label: `${setting("food_open_hour").padStart(2,"0")}:00 - ${setting("food_close_hour").padStart(2,"0")}:00` },
+    drinks: { open: +setting("drinks_open_hour"), close: +setting("drinks_close_hour"), label: `${setting("drinks_open_hour").padStart(2,"0")}:00 - ${setting("drinks_close_hour").padStart(2,"0")}:00` },
+  };
+}
 
 // แอดมินกดปิด/เปิดครัว-กาแฟ manual (null = ใช้เวลาปกติ, false = บังคับปิด, true = บังคับเปิด)
 const manualOverride = { food: null, drinks: null };
@@ -53,7 +80,7 @@ function isSectionOpen(section) {
   if (manualOverride[section] === false) return false;
   if (manualOverride[section] === true) return true;
   const hour = new Date().getHours();
-  const h = BUSINESS_HOURS[section];
+  const h = getBusinessHours()[section];
   return h && hour >= h.open && hour < h.close;
 }
 
@@ -454,6 +481,37 @@ app.post("/api/admin/menu-image/:id", requireAdmin, express.json({ limit: "5mb" 
   }
 });
 
+// ---- Settings media upload (logo, QR, banner) ----
+const SETTINGS_IMG_DIR = path.join(__dirname, "images", "settings");
+if (!fs.existsSync(SETTINGS_IMG_DIR)) fs.mkdirSync(SETTINGS_IMG_DIR, { recursive: true });
+
+const MEDIA_TYPES = {
+  logo:       { key: "logo_path",       file: "logo.jpg",       size: 200 },
+  qr_payment: { key: "qr_payment_path", file: "qr-payment.jpg", size: 600 },
+};
+
+app.post("/api/admin/media/:type", requireAdmin, express.json({ limit: "5mb" }), async (req, res) => {
+  try {
+    const mt = MEDIA_TYPES[req.params.type];
+    if (!mt) return res.status(400).json({ error: "Invalid media type" });
+    const { image } = req.body;
+    if (!image) return res.status(400).json({ error: "No image" });
+    const buf = Buffer.from(image.replace(/^data:image\/\w+;base64,/, ""), "base64");
+    await sharp(buf)
+      .resize(mt.size, mt.size, { fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 85 })
+      .toFile(path.join(SETTINGS_IMG_DIR, mt.file));
+    const imgPath = `/images/settings/${mt.file}?t=${Date.now()}`;
+    store.setSetting(mt.key, imgPath);
+    loadSettings();
+    console.log(`[ADMIN] Media uploaded: ${req.params.type} → ${imgPath}`);
+    res.json({ success: true, path: imgPath });
+  } catch (e) {
+    console.error("Media upload error:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ==================== Admin Shop Status (ปิด/เปิดครัว-กาแฟ) ====================
 
 app.get("/api/admin/shop-status", requireAdmin, (_req, res) => {
@@ -472,6 +530,25 @@ app.post("/api/admin/shop-status", requireAdmin, express.json(), (req, res) => {
   res.json({ success: true, section, closed: !!closed });
 });
 
+// ==================== Settings API ====================
+
+app.get("/api/settings", (_req, res) => {
+  res.json(settingsCache);
+});
+
+app.get("/api/admin/settings", requireAdmin, (_req, res) => {
+  res.json(settingsCache);
+});
+
+app.post("/api/admin/settings", requireAdmin, express.json(), (req, res) => {
+  const updates = req.body;
+  if (!updates || typeof updates !== "object") return res.status(400).json({ error: "Invalid body" });
+  store.setManySettings(updates);
+  loadSettings();
+  console.log(`[ADMIN] Settings updated: ${Object.keys(updates).join(", ")}`);
+  res.json({ success: true, settings: settingsCache });
+});
+
 app.get("/api/env", (_req, res) => {
   res.json({ dev: process.env.NODE_ENV === "development" });
 });
@@ -488,7 +565,7 @@ if (process.env.NODE_ENV === "development") {
       items: [{ name: "Test Item", qty: 1, price: 50 }],
       summary: "1. Test Item = 50.-",
       total: 50,
-      delivery: { location: DELIVERY_LOCATIONS[0], name: "Tester", phone: "0999999999" },
+      delivery: { location: getDeliveryLocations()[0], name: "Tester", phone: "0999999999" },
       state: "await_slip",
       slipToken,
       createdAt: Date.now(),
@@ -589,7 +666,7 @@ app.post("/api/order", express.json(), async (req, res) => {
     const dPhone = (d.phone || "").toString().trim().slice(0, 20);
     if (!isVip) {
       if (
-        !DELIVERY_LOCATIONS.includes(dLoc) ||
+        !getDeliveryLocations().includes(dLoc) ||
         !dName ||
         dPhone.replace(/\D/g, "").length < 9
       ) {
@@ -612,7 +689,7 @@ app.post("/api/order", express.json(), async (req, res) => {
         const label = sec === "food" ? "ครัว" : "ร้านเครื่องดื่ม";
         const reason = manualOverride[sec] === false
           ? `${label}ปิดชั่วคราวครับ`
-          : `${label}ปิดแล้วครับ เปิด ${BUSINESS_HOURS[sec].label} น.`;
+          : `${label}ปิดแล้วครับ เปิด ${getBusinessHours()[sec].label} น.`;
         return res.status(400).json({ error: reason });
       }
     }
@@ -688,7 +765,7 @@ app.post("/api/order", express.json(), async (req, res) => {
       return;
     }
 
-    const qrUrl = `${getBaseUrl()}/images/qr-payment.jpg`;
+    const qrUrl = `${getBaseUrl()}${setting("qr_payment_path")}`;
     client.pushMessage({
       to: userId,
       messages: [
@@ -1033,21 +1110,21 @@ async function handleText(replyToken, userId, text) {
     if (isFood && !foodOpen) {
       let msg = manualOverride.food === false
         ? "🔴 ครัวปิดชั่วคราวครับ"
-        : `🕐 ครัวเปิดให้บริการ ${BUSINESS_HOURS.food.label} น. ครับ`;
+        : `🕐 ครัวเปิดให้บริการ ${getBusinessHours().food.label} น. ครับ`;
       if (drinkOpen) msg += `\n\n☕ สั่งเครื่องดื่มได้เลย กดปุ่ม "Drinks & Coffee" ด้านล่าง`;
       return reply(replyToken, [{ type: "text", text: msg }]);
     }
     if (isDrink && !drinkOpen) {
       let msg = manualOverride.drinks === false
         ? "🔴 ร้านเครื่องดื่มปิดชั่วคราวครับ"
-        : `🕐 ร้านเครื่องดื่มเปิดให้บริการ ${BUSINESS_HOURS.drinks.label} น. ครับ`;
+        : `🕐 ร้านเครื่องดื่มเปิดให้บริการ ${getBusinessHours().drinks.label} น. ครับ`;
       if (foodOpen) msg += `\n\n🍱 สั่งอาหารได้เลย กดปุ่ม "Food" ด้านล่าง`;
       return reply(replyToken, [{ type: "text", text: msg }]);
     }
     if (isBoth && !foodOpen && !drinkOpen) {
       const reason = (manualOverride.food === false || manualOverride.drinks === false)
         ? "🔴 ร้านปิดชั่วคราวครับ"
-        : `🕐 ร้านปิดแล้วครับ\n\n🍱 ครัว: ${BUSINESS_HOURS.food.label} น.\n☕ เครื่องดื่ม: ${BUSINESS_HOURS.drinks.label} น.`;
+        : `🕐 ร้านปิดแล้วครับ\n\n🍱 ครัว: ${getBusinessHours().food.label} น.\n☕ เครื่องดื่ม: ${getBusinessHours().drinks.label} น.`;
       return reply(replyToken, [{ type: "text", text: reason }]);
     }
 
@@ -1117,9 +1194,9 @@ async function handleText(replyToken, userId, text) {
       {
         type: "text",
         text:
-          "🏠 Hipsder Bar - Coffee & Beer\n" +
-          "📞 063-881-0439\n" +
-          "📍 แผนที่ร้าน: https://maps.app.goo.gl/wsXrsjzZJbjNwxTj9",
+          `🏠 ${setting("shop_name")}\n` +
+          `📞 ${setting("shop_phone")}\n` +
+          `📍 แผนที่ร้าน: ${setting("shop_map_url")}`,
       },
     ]);
   }

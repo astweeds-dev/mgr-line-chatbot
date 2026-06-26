@@ -125,6 +125,28 @@ body{font-family:'Sarabun',sans-serif;background:#f5f5f0;color:#333;min-height:1
 .preset-btn{padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;border:1.5px solid #e8e4cc;background:#fff;color:#666;cursor:pointer;font-family:inherit}
 .preset-btn:active{transform:scale(.95)}
 .mc-img{width:44px;height:44px;border-radius:8px;object-fit:cover;margin-right:10px;flex-shrink:0}
+
+/* Settings */
+.settings-section{padding:12px}
+.settings-card{background:#fff;border-radius:14px;padding:20px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.settings-card h3{font-size:15px;font-weight:800;color:#5A4F00;margin-bottom:14px;padding-bottom:8px;border-bottom:1.5px solid #e8e4cc}
+.sf-group{margin-bottom:12px}
+.sf-group label{display:block;font-size:13px;font-weight:700;color:#5A4F00;margin-bottom:4px}
+.sf-group input,.sf-group textarea{width:100%;padding:10px;border-radius:10px;border:1.5px solid #e8e4cc;font-size:14px;font-family:inherit}
+.sf-group input:focus,.sf-group textarea:focus{outline:none;border-color:#F9E84A}
+.sf-row{display:flex;gap:10px}
+.sf-row .sf-group{flex:1}
+.sf-color-preview{display:inline-block;width:24px;height:24px;border-radius:6px;vertical-align:middle;margin-left:6px;border:1px solid #ddd}
+.sf-loc-item{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+.sf-loc-item input{flex:1;padding:8px;border-radius:8px;border:1.5px solid #e8e4cc;font-size:13px;font-family:inherit}
+.sf-loc-item input:focus{outline:none;border-color:#F9E84A}
+.sf-loc-item button{width:32px;height:32px;border-radius:8px;border:none;background:#FDEAEA;color:#E74C3C;font-size:16px;cursor:pointer;flex-shrink:0}
+.sf-add-loc{padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;background:#f5f5f0;color:#5A4F00;border:1.5px dashed #ccc;cursor:pointer;font-family:inherit;width:100%}
+.btn-save-settings{display:block;width:calc(100% - 24px);margin:16px auto;padding:14px;border-radius:12px;font-size:15px;font-weight:800;background:#27AE60;color:#fff;border:none;cursor:pointer}
+.btn-save-settings:active{transform:scale(.98)}
+.sf-media-row{display:flex;gap:8px;align-items:center}
+.sf-media-preview{width:48px;height:48px;border-radius:8px;object-fit:cover;border:1.5px solid #e8e4cc;flex-shrink:0}
+.sf-upload-btn{display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:#F9E84A;color:#5A4F00;font-size:18px;cursor:pointer;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -155,11 +177,13 @@ body{font-family:'Sarabun',sans-serif;background:#f5f5f0;color:#333;min-height:1
     <div class="tab active" data-tab="active" onclick="switchTab('active')">ออเดอร์ <span class="count" id="count-active">0</span></div>
     <div class="tab" data-tab="history" onclick="switchTab('history')">ประวัติ</div>
     <div class="tab" data-tab="menu" onclick="switchTab('menu')">เมนู</div>
+    <div class="tab" data-tab="settings" onclick="switchTab('settings')">ตั้งค่า</div>
   </div>
 
   <div id="tab-active" class="orders"></div>
   <div id="tab-history" class="orders" style="display:none"></div>
   <div id="tab-menu" class="menu-section" style="display:none"></div>
+  <div id="tab-settings" class="settings-section" style="display:none"></div>
 </div>
 
 <!-- Slip modal -->
@@ -354,7 +378,9 @@ function switchTab(tab) {
   document.getElementById("tab-active").style.display = tab === "active" ? "" : "none";
   document.getElementById("tab-history").style.display = tab === "history" ? "" : "none";
   document.getElementById("tab-menu").style.display = tab === "menu" ? "" : "none";
+  document.getElementById("tab-settings").style.display = tab === "settings" ? "" : "none";
   if (tab === "active" || tab === "history") renderOrders();
+  if (tab === "settings") loadSettingsTab();
 }
 
 function renderOrders() {
@@ -861,6 +887,159 @@ async function toggleShop(section) {
     showToast(willClose ? `ปิด${label}แล้ว 🔴` : `เปิด${label}แล้ว 🟢`);
     loadShopStatus();
   } catch (e) { showToast(e.message, true); }
+}
+
+// ==================== Settings ====================
+let settingsData = {};
+
+async function loadSettingsTab() {
+  try {
+    settingsData = await api("/api/admin/settings");
+    renderSettingsTab();
+  } catch (e) { showToast("โหลดตั้งค่าไม่ได้: " + e.message, true); }
+}
+
+function renderSettingsTab() {
+  const s = settingsData;
+  let locs = [];
+  try { locs = JSON.parse(s.delivery_locations || "[]"); } catch {}
+  const locsHtml = locs.map((l, i) =>
+    `<div class="sf-loc-item"><input value="${l.replace(/"/g,"&quot;")}" onchange="updateLoc(${i},this.value)"><button onclick="removeLoc(${i})">✕</button></div>`
+  ).join("");
+
+  document.getElementById("tab-settings").innerHTML = `
+    <div class="settings-card">
+      <h3>🏠 ข้อมูลร้าน</h3>
+      <div class="sf-group"><label>ชื่อร้าน</label><input id="sf-shop_name" value="${(s.shop_name||"").replace(/"/g,"&quot;")}"></div>
+      <div class="sf-group"><label>เบอร์โทร</label><input id="sf-shop_phone" value="${(s.shop_phone||"").replace(/"/g,"&quot;")}"></div>
+      <div class="sf-group"><label>ลิงก์แผนที่</label><input id="sf-shop_map_url" value="${(s.shop_map_url||"").replace(/"/g,"&quot;")}"></div>
+    </div>
+    <div class="settings-card">
+      <h3>🖼️ รูปภาพ</h3>
+      <div class="sf-group">
+        <label>โลโก้</label>
+        <div class="sf-media-row">
+          <img class="sf-media-preview" id="prev-logo" src="${s.logo_path||""}" onerror="this.style.display='none'">
+          <input id="sf-logo_path" value="${(s.logo_path||"").replace(/"/g,"&quot;")}" style="flex:1">
+          <label class="sf-upload-btn">📷<input type="file" accept="image/*" hidden onchange="uploadMedia('logo',this)"></label>
+        </div>
+      </div>
+      <div class="sf-group">
+        <label>QR PromptPay</label>
+        <div class="sf-media-row">
+          <img class="sf-media-preview" id="prev-qr" src="${s.qr_payment_path||""}" onerror="this.style.display='none'">
+          <input id="sf-qr_payment_path" value="${(s.qr_payment_path||"").replace(/"/g,"&quot;")}" style="flex:1">
+          <label class="sf-upload-btn">📷<input type="file" accept="image/*" hidden onchange="uploadMedia('qr_payment',this)"></label>
+        </div>
+      </div>
+    </div>
+    <div class="settings-card">
+      <h3>🕐 เวลาเปิด-ปิด</h3>
+      <div class="sf-row">
+        <div class="sf-group"><label>อาหาร เปิด (ชม.)</label><input type="number" min="0" max="24" id="sf-food_open_hour" value="${s.food_open_hour||"16"}"></div>
+        <div class="sf-group"><label>อาหาร ปิด (ชม.)</label><input type="number" min="0" max="24" id="sf-food_close_hour" value="${s.food_close_hour||"24"}"></div>
+      </div>
+      <div class="sf-row">
+        <div class="sf-group"><label>เครื่องดื่ม เปิด (ชม.)</label><input type="number" min="0" max="24" id="sf-drinks_open_hour" value="${s.drinks_open_hour||"12"}"></div>
+        <div class="sf-group"><label>เครื่องดื่ม ปิด (ชม.)</label><input type="number" min="0" max="24" id="sf-drinks_close_hour" value="${s.drinks_close_hour||"24"}"></div>
+      </div>
+    </div>
+    <div class="settings-card">
+      <h3>📍 สถานที่จัดส่ง</h3>
+      <div id="sf-locations">${locsHtml}</div>
+      <button class="sf-add-loc" onclick="addLoc()">+ เพิ่มสถานที่</button>
+    </div>
+    <div class="settings-card">
+      <h3>🎨 สีธีม</h3>
+      <div class="sf-row">
+        <div class="sf-group"><label>สีหลัก <span class="sf-color-preview" id="cp-primary" style="background:${s.theme_primary||"#5A4F00"}"></span></label><input id="sf-theme_primary" value="${s.theme_primary||"#5A4F00"}" oninput="document.getElementById('cp-primary').style.background=this.value"></div>
+        <div class="sf-group"><label>สีเน้น <span class="sf-color-preview" id="cp-accent" style="background:${s.theme_accent||"#F9E84A"}"></span></label><input id="sf-theme_accent" value="${s.theme_accent||"#F9E84A"}" oninput="document.getElementById('cp-accent').style.background=this.value"></div>
+      </div>
+      <div class="sf-row">
+        <div class="sf-group"><label>สีพื้นหลัง <span class="sf-color-preview" id="cp-bg" style="background:${s.theme_bg||"#FFFEF5"}"></span></label><input id="sf-theme_bg" value="${s.theme_bg||"#FFFEF5"}" oninput="document.getElementById('cp-bg').style.background=this.value"></div>
+        <div class="sf-group"><label>สีสำเร็จ <span class="sf-color-preview" id="cp-success" style="background:${s.theme_success||"#27AE60"}"></span></label><input id="sf-theme_success" value="${s.theme_success||"#27AE60"}" oninput="document.getElementById('cp-success').style.background=this.value"></div>
+      </div>
+    </div>
+    <div class="settings-card">
+      <h3>⚙️ อื่นๆ</h3>
+      <div class="sf-group"><label>ETA เริ่มต้น (นาที)</label><input type="number" min="1" max="120" id="sf-default_eta_minutes" value="${s.default_eta_minutes||"20"}"></div>
+    </div>
+    <button class="btn-save-settings" onclick="saveSettings()">💾 บันทึกตั้งค่า</button>
+  `;
+}
+
+function getSettingsLocs() {
+  const items = document.querySelectorAll("#sf-locations .sf-loc-item input");
+  return Array.from(items).map(i => i.value.trim()).filter(Boolean);
+}
+
+function updateLoc(idx, val) {
+  const locs = getSettingsLocs();
+  locs[idx] = val;
+  settingsData.delivery_locations = JSON.stringify(locs);
+}
+
+function removeLoc(idx) {
+  const locs = getSettingsLocs();
+  locs.splice(idx, 1);
+  settingsData.delivery_locations = JSON.stringify(locs);
+  renderSettingsTab();
+}
+
+function addLoc() {
+  const locs = getSettingsLocs();
+  locs.push("");
+  settingsData.delivery_locations = JSON.stringify(locs);
+  renderSettingsTab();
+  const inputs = document.querySelectorAll("#sf-locations .sf-loc-item input");
+  if (inputs.length) inputs[inputs.length - 1].focus();
+}
+
+async function uploadMedia(type, input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (file.size > 4 * 1024 * 1024) return showToast("ไฟล์ใหญ่เกิน 4MB", true);
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const r = await api("/api/admin/media/" + type, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: reader.result })
+      });
+      if (r.error) throw new Error(r.error);
+      const keyMap = { logo: "logo_path", qr_payment: "qr_payment_path", banner: "banner_path" };
+      const inputEl = document.getElementById("sf-" + keyMap[type]);
+      if (inputEl) inputEl.value = r.path;
+      const prevMap = { logo: "prev-logo", qr_payment: "prev-qr" };
+      const prev = document.getElementById(prevMap[type]);
+      if (prev) { prev.src = r.path; prev.style.display = ""; }
+      showToast("อัปโหลดสำเร็จ ✅");
+    } catch (e) { showToast("อัปโหลดไม่ได้: " + e.message, true); }
+  };
+  reader.readAsDataURL(file);
+}
+
+async function saveSettings() {
+  const fields = ["shop_name","shop_phone","shop_map_url","logo_path","qr_payment_path",
+    "food_open_hour","food_close_hour","drinks_open_hour","drinks_close_hour",
+    "theme_primary","theme_accent","theme_bg","theme_success","default_eta_minutes"];
+  const updates = {};
+  for (const f of fields) {
+    const el = document.getElementById("sf-" + f);
+    if (el) updates[f] = el.value.trim();
+  }
+  updates.delivery_locations = JSON.stringify(getSettingsLocs());
+  try {
+    const r = await api("/api/admin/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates)
+    });
+    if (r.error) throw new Error(r.error);
+    settingsData = r.settings || updates;
+    showToast("บันทึกตั้งค่าแล้ว ✅");
+  } catch (e) { showToast("บันทึกไม่ได้: " + e.message, true); }
 }
 
 // Init

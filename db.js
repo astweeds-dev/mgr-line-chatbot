@@ -41,6 +41,11 @@ db.exec(`
     phone     TEXT NOT NULL,
     updatedAt INTEGER
   );
+  CREATE TABLE IF NOT EXISTS settings (
+    key       TEXT PRIMARY KEY,
+    value     TEXT NOT NULL,
+    updatedAt INTEGER
+  );
   CREATE TABLE IF NOT EXISTS menu_items (
     id        INTEGER PRIMARY KEY,
     cat       TEXT NOT NULL,
@@ -224,6 +229,38 @@ function getCustomer(userId) {
   return row ? { name: row.name, phone: row.phone } : null;
 }
 
+// ---- Settings ----
+const stmtGetSetting = db.prepare(`SELECT value FROM settings WHERE key = ?`);
+const stmtUpsertSetting = db.prepare(`
+  INSERT INTO settings (key, value, updatedAt) VALUES (@key, @value, @updatedAt)
+  ON CONFLICT(key) DO UPDATE SET value=@value, updatedAt=@updatedAt
+`);
+const stmtAllSettings = db.prepare(`SELECT key, value FROM settings`);
+
+function getSetting(key) {
+  const row = stmtGetSetting.get(key);
+  return row ? row.value : null;
+}
+
+function setSetting(key, value) {
+  stmtUpsertSetting.run({ key, value: String(value), updatedAt: Date.now() });
+}
+
+function getAllSettings() {
+  const map = {};
+  for (const row of stmtAllSettings.all()) map[row.key] = row.value;
+  return map;
+}
+
+function setManySettings(obj) {
+  const tx = db.transaction(() => {
+    for (const [key, value] of Object.entries(obj)) {
+      stmtUpsertSetting.run({ key, value: String(value), updatedAt: Date.now() });
+    }
+  });
+  tx();
+}
+
 module.exports = {
   saveOrder,
   deleteOrder,
@@ -237,4 +274,8 @@ module.exports = {
   menuCount,
   saveCustomer,
   getCustomer,
+  getSetting,
+  setSetting,
+  getAllSettings,
+  setManySettings,
 };
