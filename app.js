@@ -17,6 +17,11 @@ const config = {
 };
 const ADMIN_ID = process.env.ADMIN_USER_ID;
 const GOOGLE_SHEET_URL = process.env.GOOGLE_SHEET_URL;
+const VIP_IDS = new Set((process.env.VIP_USER_IDS || "").split(",").map(s => s.trim()).filter(Boolean));
+const VIP_NAMES = {
+  "U74a59d110f840bbeb9091c135de5660c": "G Owner",
+  "U34c40f2479ce1604c7106c5dddfc7716": "DEV",
+};
 // ปลายทางแจ้งเตือน: กลุ่ม LINE ถ้าตั้งไว้ ไม่งั้นส่งหาเจ้าของคนเดียว (ADMIN_ID ยังใช้เช็คสิทธิ์ปุ่ม postback)
 const ALERT_TARGET = process.env.ALERT_GROUP_ID || process.env.ADMIN_USER_ID;
 function getBaseUrl() {
@@ -63,7 +68,7 @@ function deliveryText(order) {
   return `📍 ${d.location}\n👤 ${d.name}  📞 ${d.phone}`;
 }
 
-function logToSheet(orderId, order) {
+function logToSheet(orderId, order, statusOverride) {
   if (!GOOGLE_SHEET_URL) return;
   const d = order.delivery || {};
   const body = JSON.stringify({
@@ -74,7 +79,7 @@ function logToSheet(orderId, order) {
     location: d.location || "",
     items: order.summary || "",
     total: order.total || 0,
-    status: "delivered",
+    status: statusOverride || "delivered",
   });
   fetch(GOOGLE_SHEET_URL, {
     method: "POST",
@@ -554,8 +559,9 @@ app.get("/api/customer", (req, res) => {
   const tokenData = orderTokens.get(token);
   if (!tokenData) return res.json({ found: false });
   const c = store.getCustomer(tokenData.userId);
-  if (!c) return res.json({ found: false });
-  res.json({ found: true, name: c.name, phone: c.phone });
+  const isVip = VIP_IDS.has(tokenData.userId);
+  if (!c && !isVip) return res.json({ found: false });
+  res.json({ found: true, name: c?.name || (isVip ? (VIP_NAMES[tokenData.userId] || "VIP") : ""), phone: c?.phone || "", vip: isVip });
 });
 
 // ==================== API: รับออเดอร์จากเว็บ ====================
@@ -564,21 +570,6 @@ app.post("/api/order", express.json(), async (req, res) => {
   try {
     const { token, items, addons, delivery } = req.body;
     const clientTotal = req.body.total;
-
-    // ตรวจจุดจัดส่ง + ชื่อ/เบอร์ (ไม่เชื่อค่าจากเว็บล้วนๆ — validate ฝั่ง server)
-    const d = delivery || {};
-    const dLoc = (d.location || "").toString().trim();
-    const dName = (d.name || "").toString().trim().slice(0, 40);
-    const dPhone = (d.phone || "").toString().trim().slice(0, 20);
-    if (
-      !DELIVERY_LOCATIONS.includes(dLoc) ||
-      !dName ||
-      dPhone.replace(/\D/g, "").length < 9
-    ) {
-      return res
-        .status(400)
-        .json({ error: "กรุณาเลือกจุดจัดส่ง และกรอกชื่อ/เบอร์โทรให้ครบ" });
-    }
 
     const tokenData = orderTokens.get(token);
     if (!tokenData) {
@@ -589,6 +580,24 @@ app.post("/api/order", express.json(), async (req, res) => {
       return res.status(401).json({ error: "ลิงก์หมดอายุ กรุณากดปุ่ม Food อีกครั้ง" });
     }
     const userId = tokenData.userId;
+    const isVip = VIP_IDS.has(userId);
+
+    // ตรวจจุดจัดส่ง + ชื่อ/เบอร์ (VIP ข้ามได้)
+    const d = delivery || {};
+    const dLoc = (d.location || "").toString().trim();
+    const dName = (d.name || "").toString().trim().slice(0, 40) || (isVip ? (VIP_NAMES[userId] || "VIP") : "");
+    const dPhone = (d.phone || "").toString().trim().slice(0, 20);
+    if (!isVip) {
+      if (
+        !DELIVERY_LOCATIONS.includes(dLoc) ||
+        !dName ||
+        dPhone.replace(/\D/g, "").length < 9
+      ) {
+        return res
+          .status(400)
+          .json({ error: "กรุณาเลือกจุดจัดส่ง และกรอกชื่อ/เบอร์โทรให้ครบ" });
+      }
+    }
     // ไม่ลบ token ที่นี่ — ปล่อยให้ใช้ซ้ำได้จนหมดอายุ (30 นาที)
     // เพื่อให้ปุ่ม "แก้ไขออเดอร์" / "สั่งเพิ่มเติม" กดยืนยันใหม่ได้
 
@@ -644,31 +653,40 @@ app.post("/api/order", express.json(), async (req, res) => {
     }
 
     const slipToken = crypto.randomBytes(16).toString("hex");
+    const orderState = isVip ? "confirmed" : "await_slip";
     const newOrder = {
       userId,
       items: items.map((it) => ({ name: it.name, qty: it.qty, price: it.price })),
       summary,
       total,
       delivery: { location: dLoc, name: dName, phone: dPhone },
-      state: "await_slip",
+      state: orderState,
       slipToken,
       createdAt: Date.now(),
-      orderStatus: "none",
+      orderStatus: isVip ? "received" : "none",
       statusEta: 0,
-      statusAt: 0,
+      statusAt: isVip ? Date.now() : 0,
+      isVip: isVip || undefined,
     };
     pendingOrders.set(orderId, newOrder);
     store.saveOrder(orderId, newOrder);
 
-    session.state = "await_slip";
-    session.orderId = orderId;
+    session.state = isVip ? "idle" : "await_slip";
+    session.orderId = isVip ? null : orderId;
     store.saveSession(userId, session);
-    store.saveCustomer(userId, dName, dPhone);
+    if (dName && dPhone) store.saveCustomer(userId, dName, dPhone);
 
-    res.json({ success: true, orderId, slipToken });
+    res.json({ success: true, orderId, slipToken, vipFree: isVip });
 
-    // dev: test order (uid ขึ้นต้น "TEST") — ข้ามการ push LINE ทั้งหมด กัน quota/สแปมแอดมินจริง
     if (userId.startsWith("TEST")) return;
+
+    if (isVip) {
+      logToSheet(orderId, newOrder, "FREE");
+      const dPart = dLoc ? `📍 ${dLoc}\n👤 ${dName}  📞 ${dPhone}\n` : "";
+      client.pushMessage({ to: userId, messages: [{ type: "text", text: `🎉 ออเดอร์ #${orderId} (VIP FREE)\n${dPart}${summary}\n💰 รวม: ${total}.- (ฟรี)\n\nกำลังเตรียมให้เลยครับ 🍱` }] }).catch(() => {});
+      client.pushMessage({ to: ALERT_TARGET, messages: [{ type: "text", text: `🎉 ออเดอร์ VIP FREE #${orderId}\n${dPart}${summary}\n💰 รวม: ${total}.- (ฟรี)\n\nเริ่มทำได้เลยครับ 🍱` }] }).catch(() => {});
+      return;
+    }
 
     const qrUrl = `${getBaseUrl()}/images/qr-payment.jpg`;
     client.pushMessage({

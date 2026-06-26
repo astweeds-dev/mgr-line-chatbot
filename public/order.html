@@ -763,6 +763,7 @@ function phoneOk(p) {
 }
 
 function startReady() {
+  if (isVip) return true;
   return !!delivery.location && delivery.name.length >= 1 && phoneOk(delivery.phone);
 }
 
@@ -1160,6 +1161,10 @@ async function submitOrder() {
     lastTotal = totalPrice();
     lastItems = getSelectedItems();
     stopTokenCountdown();
+    if (data.vipFree) {
+      goSuccess();
+      return;
+    }
     goPayment();
   } catch (e) {
     document.getElementById("overlay-loading").classList.remove("show");
@@ -1474,12 +1479,20 @@ function setLang(l) {
 function toggleLang() { setLang(lang === "th" ? "en" : "th"); }
 
 // ==================== REMEMBER CUSTOMER ====================
+let isVip = false;
 async function loadCustomer() {
   if (!TOKEN) return;
   try {
     const r = await fetch(`/api/customer?t=${encodeURIComponent(TOKEN)}`);
     const d = await r.json();
-    if (d.found) {
+    if (d.vip) {
+      isVip = true;
+      delivery.name = d.name || "VIP";
+      delivery.phone = d.phone || "";
+      document.getElementById("in-name").value = delivery.name;
+      document.getElementById("in-phone").value = delivery.phone;
+      document.getElementById("btn-start").disabled = false;
+    } else if (d.found) {
       document.getElementById("in-name").value = d.name;
       document.getElementById("in-phone").value = d.phone;
       delivery.name = d.name;
