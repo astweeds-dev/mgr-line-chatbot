@@ -958,7 +958,7 @@ function renderSettingsTab() {
     </div>
     <div class="settings-card">
       <h3>💳 ช่องทางชำระเงิน</h3>
-      <div class="sf-group"><label><input type="checkbox" id="sf-payment_qr_enabled" ${s.payment_qr_enabled !== "false" ? "checked" : ""}> PromptPay QR</label></div>
+      <div class="sf-group"><label>PromptPay QR — เปิดตลอด</label></div>
       <div class="sf-group"><label><input type="checkbox" id="sf-payment_cash_enabled" ${s.payment_cash_enabled === "true" ? "checked" : ""}> เงินสด</label></div>
     </div>
     <button class="btn-save-settings" onclick="saveSettings()">💾 บันทึกตั้งค่า</button>
@@ -1042,7 +1042,7 @@ async function saveSettings() {
   const fields = ["shop_name","shop_phone","shop_map_url","logo_path","qr_payment_path",
     "food_open_hour","food_close_hour","drinks_open_hour","drinks_close_hour",
     ];
-  const checkboxFields = ["payment_qr_enabled","payment_cash_enabled"];
+  const checkboxFields = ["payment_cash_enabled"];
   const updates = {};
   for (const f of fields) {
     const el = document.getElementById("sf-" + f);

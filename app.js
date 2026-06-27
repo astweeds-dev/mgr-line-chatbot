@@ -45,7 +45,6 @@ const SETTINGS_DEFAULTS = {
   drinks_close_hour: "24",
   delivery_locations: JSON.stringify(["ห้องซ้อมเล็ก", "ห้องซ้อมใหญ่", "ห้องสตูดิโอ", "ลานนั่งหน้ามินิบาร์"]),
   default_eta_minutes: "20",
-  payment_qr_enabled: "true",
   payment_cash_enabled: "false",
 };
 
@@ -753,7 +752,11 @@ app.post("/api/order", express.json(), async (req, res) => {
       }
     }
 
-    const isCash = !isVip && paymentMethod === "cash" && setting("payment_cash_enabled") === "true";
+    const cashEnabled = setting("payment_cash_enabled") === "true";
+    if (!isVip && paymentMethod === "cash" && !cashEnabled) {
+      return res.status(400).json({ error: "ช่องทางเงินสดปิดอยู่" });
+    }
+    const isCash = !isVip && paymentMethod === "cash" && cashEnabled;
     const slipToken = crypto.randomBytes(16).toString("hex");
     const orderState = (isVip || isCash) ? "confirmed" : "await_slip";
     const newOrder = {
