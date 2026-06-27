@@ -39,16 +39,14 @@ const SETTINGS_DEFAULTS = {
   shop_map_url: "https://maps.app.goo.gl/wsXrsjzZJbjNwxTj9",
   logo_path: "/images/mgr%20logo.jpg",
   qr_payment_path: "/images/qr-payment.jpg",
-  theme_primary: "#5A4F00",
-  theme_accent: "#F9E84A",
-  theme_bg: "#FFFEF5",
-  theme_success: "#27AE60",
   food_open_hour: "16",
   food_close_hour: "24",
   drinks_open_hour: "12",
   drinks_close_hour: "24",
   delivery_locations: JSON.stringify(["ห้องซ้อมเล็ก", "ห้องซ้อมใหญ่", "ห้องสตูดิโอ", "ลานนั่งหน้ามินิบาร์"]),
   default_eta_minutes: "20",
+  payment_qr_enabled: "true",
+  payment_cash_enabled: "false",
 };
 
 let settingsCache = {};
@@ -74,7 +72,13 @@ function getBusinessHours() {
 }
 
 // แอดมินกดปิด/เปิดครัว-กาแฟ manual (null = ใช้เวลาปกติ, false = บังคับปิด, true = บังคับเปิด)
-const manualOverride = { food: null, drinks: null };
+// persist ลง settings DB เพื่อไม่ให้หายเมื่อ restart
+const manualOverride = {
+  get food() { const v = setting("override_food"); return v === "false" ? false : v === "true" ? true : null; },
+  set food(v) { store.setSetting("override_food", String(v)); loadSettings(); },
+  get drinks() { const v = setting("override_drinks"); return v === "false" ? false : v === "true" ? true : null; },
+  set drinks(v) { store.setSetting("override_drinks", String(v)); loadSettings(); },
+};
 
 function isSectionOpen(section) {
   if (manualOverride[section] === false) return false;
@@ -481,7 +485,7 @@ app.post("/api/admin/menu-image/:id", requireAdmin, express.json({ limit: "5mb" 
   }
 });
 
-// ---- Settings media upload (logo, QR, banner) ----
+// ---- Settings media upload (logo, QR) ----
 const SETTINGS_IMG_DIR = path.join(__dirname, "images", "settings");
 if (!fs.existsSync(SETTINGS_IMG_DIR)) fs.mkdirSync(SETTINGS_IMG_DIR, { recursive: true });
 
@@ -595,6 +599,26 @@ app.get("/api/menu", (_req, res) => {
 
 // ==================== Menu from DB ====================
 
+const MENU_SEED = require("./seed-menu");
+
+// bump เมื่อแก้ข้อมูลใน seed-menu.js เพื่อ repair DB เดิม (เช่น เพิ่ม add-on ไข่ดาวให้อาหาร)
+const MENU_SEED_VERSION = 2;
+function ensureMenuSeed() {
+  const stored = parseInt(store.getSetting("menu_seed_version") || "0", 10);
+  const empty = store.menuCount() === 0;
+  if (!empty && stored >= MENU_SEED_VERSION) return;
+  // repair: คงสถานะเปิด/ปิดที่แอดมินตั้งไว้ ไม่ให้ re-seed มาเปิดรายการที่ปิดไว้
+  const prevEnabled = {};
+  if (!empty) for (const it of store.loadMenuItems()) prevEnabled[it.id] = it.enabled;
+  for (const item of MENU_SEED) {
+    const enabled = prevEnabled[item.id] !== undefined ? prevEnabled[item.id] : true;
+    store.saveMenuItem({ ...item, enabled });
+  }
+  store.setSetting("menu_seed_version", String(MENU_SEED_VERSION));
+  console.log(`[MENU] ${empty ? "Seeded" : "Re-seeded (repair)"} ${MENU_SEED.length} items → v${MENU_SEED_VERSION}`);
+}
+ensureMenuSeed();
+
 function reloadMenuFromDb() {
   const items = store.loadMenuItems();
   if (items.length === 0) return;
@@ -645,7 +669,7 @@ app.get("/api/customer", (req, res) => {
 
 app.post("/api/order", express.json(), async (req, res) => {
   try {
-    const { token, items, addons, delivery } = req.body;
+    const { token, items, addons, delivery, paymentMethod } = req.body;
     const clientTotal = req.body.total;
 
     const tokenData = orderTokens.get(token);
@@ -729,8 +753,9 @@ app.post("/api/order", express.json(), async (req, res) => {
       }
     }
 
+    const isCash = !isVip && paymentMethod === "cash" && setting("payment_cash_enabled") === "true";
     const slipToken = crypto.randomBytes(16).toString("hex");
-    const orderState = isVip ? "confirmed" : "await_slip";
+    const orderState = (isVip || isCash) ? "confirmed" : "await_slip";
     const newOrder = {
       userId,
       items: items.map((it) => ({ name: it.name, qty: it.qty, price: it.price })),
@@ -740,22 +765,30 @@ app.post("/api/order", express.json(), async (req, res) => {
       state: orderState,
       slipToken,
       createdAt: Date.now(),
-      orderStatus: isVip ? "received" : "none",
+      orderStatus: (isVip || isCash) ? "received" : "none",
       statusEta: 0,
-      statusAt: isVip ? Date.now() : 0,
+      statusAt: (isVip || isCash) ? Date.now() : 0,
       isVip: isVip || undefined,
+      paymentMethod: isCash ? "cash" : "qr",
     };
     pendingOrders.set(orderId, newOrder);
     store.saveOrder(orderId, newOrder);
 
-    session.state = isVip ? "idle" : "await_slip";
-    session.orderId = isVip ? null : orderId;
+    session.state = (isVip || isCash) ? "idle" : "await_slip";
+    session.orderId = (isVip || isCash) ? null : orderId;
     store.saveSession(userId, session);
     if (dName && dPhone) store.saveCustomer(userId, dName, dPhone);
 
-    res.json({ success: true, orderId, slipToken, vipFree: isVip });
+    res.json({ success: true, orderId, slipToken, vipFree: isVip, cashOrder: isCash });
 
     if (userId.startsWith("TEST")) return;
+
+    if (isCash) {
+      const dPart = `📍 ${dLoc}\n👤 ${dName}  📞 ${dPhone}\n`;
+      client.pushMessage({ to: userId, messages: [{ type: "text", text: `✅ ออเดอร์ #${orderId}\n${dPart}${summary}\n💰 รวม: ${total}.- (จ่ายเงินสด)\n\nกำลังเตรียมให้ครับ 🍱` }] }).catch(() => {});
+      client.pushMessage({ to: ALERT_TARGET, messages: [{ type: "text", text: `💵 ออเดอร์เงินสด #${orderId}\n${dPart}${summary}\n💰 รวม: ${total}.- (เก็บเงินสดตอนส่ง)\n\nเริ่มทำได้เลยครับ 🍱` }] }).catch(() => {});
+      return;
+    }
 
     if (isVip) {
       logToSheet(orderId, newOrder, "FREE");

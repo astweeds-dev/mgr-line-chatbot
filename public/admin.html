@@ -136,7 +136,7 @@ body{font-family:'Sarabun',sans-serif;background:#f5f5f0;color:#333;min-height:1
 .sf-group input:focus,.sf-group textarea:focus{outline:none;border-color:#F9E84A}
 .sf-row{display:flex;gap:10px}
 .sf-row .sf-group{flex:1}
-.sf-color-preview{display:inline-block;width:24px;height:24px;border-radius:6px;vertical-align:middle;margin-left:6px;border:1px solid #ddd}
+
 .sf-loc-item{display:flex;gap:6px;align-items:center;margin-bottom:6px}
 .sf-loc-item input{flex:1;padding:8px;border-radius:8px;border:1.5px solid #e8e4cc;font-size:13px;font-family:inherit}
 .sf-loc-item input:focus{outline:none;border-color:#F9E84A}
@@ -950,15 +950,9 @@ function renderSettingsTab() {
       <button class="sf-add-loc" onclick="addLoc()">+ เพิ่มสถานที่</button>
     </div>
     <div class="settings-card">
-      <h3>🎨 สีธีม</h3>
-      <div class="sf-row">
-        <div class="sf-group"><label>สีหลัก <span class="sf-color-preview" id="cp-primary" style="background:${s.theme_primary||"#5A4F00"}"></span></label><input id="sf-theme_primary" value="${s.theme_primary||"#5A4F00"}" oninput="document.getElementById('cp-primary').style.background=this.value"></div>
-        <div class="sf-group"><label>สีเน้น <span class="sf-color-preview" id="cp-accent" style="background:${s.theme_accent||"#F9E84A"}"></span></label><input id="sf-theme_accent" value="${s.theme_accent||"#F9E84A"}" oninput="document.getElementById('cp-accent').style.background=this.value"></div>
-      </div>
-      <div class="sf-row">
-        <div class="sf-group"><label>สีพื้นหลัง <span class="sf-color-preview" id="cp-bg" style="background:${s.theme_bg||"#FFFEF5"}"></span></label><input id="sf-theme_bg" value="${s.theme_bg||"#FFFEF5"}" oninput="document.getElementById('cp-bg').style.background=this.value"></div>
-        <div class="sf-group"><label>สีสำเร็จ <span class="sf-color-preview" id="cp-success" style="background:${s.theme_success||"#27AE60"}"></span></label><input id="sf-theme_success" value="${s.theme_success||"#27AE60"}" oninput="document.getElementById('cp-success').style.background=this.value"></div>
-      </div>
+      <h3>💳 ช่องทางชำระเงิน</h3>
+      <div class="sf-group"><label><input type="checkbox" id="sf-payment_qr_enabled" ${s.payment_qr_enabled !== "false" ? "checked" : ""}> PromptPay QR</label></div>
+      <div class="sf-group"><label><input type="checkbox" id="sf-payment_cash_enabled" ${s.payment_cash_enabled === "true" ? "checked" : ""}> เงินสด</label></div>
     </div>
     <div class="settings-card">
       <h3>⚙️ อื่นๆ</h3>
@@ -1008,7 +1002,7 @@ async function uploadMedia(type, input) {
         body: JSON.stringify({ image: reader.result })
       });
       if (r.error) throw new Error(r.error);
-      const keyMap = { logo: "logo_path", qr_payment: "qr_payment_path", banner: "banner_path" };
+      const keyMap = { logo: "logo_path", qr_payment: "qr_payment_path" };
       const inputEl = document.getElementById("sf-" + keyMap[type]);
       if (inputEl) inputEl.value = r.path;
       const prevMap = { logo: "prev-logo", qr_payment: "prev-qr" };
@@ -1023,11 +1017,16 @@ async function uploadMedia(type, input) {
 async function saveSettings() {
   const fields = ["shop_name","shop_phone","shop_map_url","logo_path","qr_payment_path",
     "food_open_hour","food_close_hour","drinks_open_hour","drinks_close_hour",
-    "theme_primary","theme_accent","theme_bg","theme_success","default_eta_minutes"];
+    "default_eta_minutes"];
+  const checkboxFields = ["payment_qr_enabled","payment_cash_enabled"];
   const updates = {};
   for (const f of fields) {
     const el = document.getElementById("sf-" + f);
     if (el) updates[f] = el.value.trim();
+  }
+  for (const f of checkboxFields) {
+    const el = document.getElementById("sf-" + f);
+    if (el) updates[f] = el.checked ? "true" : "false";
   }
   updates.delivery_locations = JSON.stringify(getSettingsLocs());
   try {
