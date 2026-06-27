@@ -892,9 +892,12 @@ async function toggleShop(section) {
 // ==================== Settings ====================
 let settingsData = {};
 
+let settingsShopStatus = { food: {}, drinks: {} };
+
 async function loadSettingsTab() {
   try {
     settingsData = await api("/api/admin/settings");
+    try { settingsShopStatus = await api("/api/admin/shop-status"); } catch {}
     renderSettingsTab();
   } catch (e) { showToast("โหลดตั้งค่าไม่ได้: " + e.message, true); }
 }
@@ -935,6 +938,10 @@ function renderSettingsTab() {
     </div>
     <div class="settings-card">
       <h3>🕐 เวลาเปิด-ปิด</h3>
+      <div class="sf-row" style="margin-bottom:12px">
+        <button class="shop-toggle ${settingsShopStatus.food?.manualClosed ? 'is-closed' : 'is-open'}" id="sf-toggle-food" onclick="sfToggleShop('food')" style="flex:1">🍳 ครัว: ${settingsShopStatus.food?.manualClosed ? 'ปิดอยู่' : 'เปิดอยู่'}</button>
+        <button class="shop-toggle ${settingsShopStatus.drinks?.manualClosed ? 'is-closed' : 'is-open'}" id="sf-toggle-drinks" onclick="sfToggleShop('drinks')" style="flex:1">☕ กาแฟ: ${settingsShopStatus.drinks?.manualClosed ? 'ปิดอยู่' : 'เปิดอยู่'}</button>
+      </div>
       <div class="sf-row">
         <div class="sf-group"><label>อาหาร เปิด (ชม.)</label><input type="number" min="0" max="24" id="sf-food_open_hour" value="${s.food_open_hour||"16"}"></div>
         <div class="sf-group"><label>อาหาร ปิด (ชม.)</label><input type="number" min="0" max="24" id="sf-food_close_hour" value="${s.food_close_hour||"24"}"></div>
@@ -953,10 +960,6 @@ function renderSettingsTab() {
       <h3>💳 ช่องทางชำระเงิน</h3>
       <div class="sf-group"><label><input type="checkbox" id="sf-payment_qr_enabled" ${s.payment_qr_enabled !== "false" ? "checked" : ""}> PromptPay QR</label></div>
       <div class="sf-group"><label><input type="checkbox" id="sf-payment_cash_enabled" ${s.payment_cash_enabled === "true" ? "checked" : ""}> เงินสด</label></div>
-    </div>
-    <div class="settings-card">
-      <h3>⚙️ อื่นๆ</h3>
-      <div class="sf-group"><label>ETA เริ่มต้น (นาที)</label><input type="number" min="1" max="120" id="sf-default_eta_minutes" value="${s.default_eta_minutes||"20"}"></div>
     </div>
     <button class="btn-save-settings" onclick="saveSettings()">💾 บันทึกตั้งค่า</button>
   `;
@@ -1014,10 +1017,31 @@ async function uploadMedia(type, input) {
   reader.readAsDataURL(file);
 }
 
+async function sfToggleShop(section) {
+  const current = settingsShopStatus[section];
+  const willClose = !current.manualClosed;
+  const label = section === "food" ? "ครัว" : "กาแฟ/เครื่องดื่ม";
+  if (!confirm(willClose ? `ปิด${label}เลยนะ?` : `เปิด${label}คืนนะ?`)) return;
+  try {
+    await api("/api/admin/shop-status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ section, closed: willClose })
+    });
+    settingsShopStatus[section].manualClosed = willClose;
+    const btn = document.getElementById("sf-toggle-" + section);
+    const icon = section === "food" ? "🍳 ครัว" : "☕ กาแฟ";
+    btn.className = "shop-toggle " + (willClose ? "is-closed" : "is-open");
+    btn.textContent = icon + ": " + (willClose ? "ปิดอยู่" : "เปิดอยู่");
+    loadShopStatus();
+    showToast(willClose ? `ปิด${label}แล้ว 🔴` : `เปิด${label}แล้ว 🟢`);
+  } catch (e) { showToast(e.message, true); }
+}
+
 async function saveSettings() {
   const fields = ["shop_name","shop_phone","shop_map_url","logo_path","qr_payment_path",
     "food_open_hour","food_close_hour","drinks_open_hour","drinks_close_hour",
-    "default_eta_minutes"];
+    ];
   const checkboxFields = ["payment_qr_enabled","payment_cash_enabled"];
   const updates = {};
   for (const f of fields) {

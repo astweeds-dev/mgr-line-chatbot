@@ -267,6 +267,7 @@ button{font-family:'Sarabun',sans-serif;cursor:pointer;border:none;outline:none}
   </div>
   <div class="start-bar">
     <button class="btn-confirm" id="btn-start" onclick="startOrdering()" data-i18n="startOrdering" disabled>เริ่มสั่งอาหาร &rarr;</button>
+    <button class="btn-confirm" id="btn-dev-skip-start" style="display:none;background:#FF9800;margin-top:8px" onclick="devSkipStart()">DEV: ข้ามกรอกข้อมูล</button>
   </div>
 </div>
 
@@ -759,6 +760,16 @@ function selectLocation(i) {
   delivery.location = LOCATIONS[i];
   renderLocations();
   validateStart();
+}
+
+function devSkipStart() {
+  delivery.location = LOCATIONS[0];
+  delivery.name = "DEV Tester";
+  delivery.phone = "0999999999";
+  document.getElementById("in-name").value = delivery.name;
+  document.getElementById("in-phone").value = delivery.phone;
+  renderLocations();
+  startOrdering();
 }
 
 function onStartInput() {
@@ -1675,6 +1686,9 @@ loadShopSettings().then(() => {
     renderLocations();
     loadCustomer();
     startTokenCountdown();
+    fetch("/api/env").then(r=>r.json()).then(d=>{
+      if(d.dev) document.getElementById("btn-dev-skip-start").style.display="block";
+    }).catch(()=>{});
   }
 });
 </script>
