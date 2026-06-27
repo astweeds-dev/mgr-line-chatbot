@@ -18,6 +18,7 @@ timeout /t 2 /nobreak >nul
 node watchdog.js
 
 echo.
-echo [%date% %time%] Watchdog exited — restarting in 5 seconds...
+echo [%date% %time%] Watchdog exited ??? restarting in 5 seconds...
 timeout /t 5 /nobreak >nul
 goto loop
+
