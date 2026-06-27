@@ -10,8 +10,8 @@ echo ============================================
 echo.
 
 :loop
-:: Clean up stale processes before (re)starting
-taskkill /f /im cloudflared.exe >nul 2>nul
+:: Clean up stale PRODUCTION processes only (don't kill DEV's cloudflared)
+powershell -Command "Get-Process cloudflared -ErrorAction SilentlyContinue | Where-Object { (Get-NetTCPConnection -OwningProcess $_.Id -ErrorAction SilentlyContinue).LocalPort -contains 3000 } | Stop-Process -Force -ErrorAction SilentlyContinue" >nul 2>nul
 powershell -Command "Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }" >nul 2>nul
 timeout /t 2 /nobreak >nul
 
