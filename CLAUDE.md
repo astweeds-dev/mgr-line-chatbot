@@ -1,6 +1,6 @@
 # MGR LINE Chatbot
 
-LINE Chatbot for Merry.Go"Round STUDIO — food & drinks ordering, payment via PromptPay QR, admin confirmation flow.
+LINE Chatbot for Merry.Go"Round STUDIO — food & drinks ordering, payment via PromptPay QR or cash, admin confirmation flow, dynamic menu & settings from SQLite Dashboard.
 
 ## Tech Stack
 - Node.js + Express + @line/bot-sdk v9 + sharp
@@ -15,7 +15,9 @@ public/order.html          # Food ordering web UI (opened from LINE)
 images/mgr logo.jpg        # Store logo (note: filename has a space)
 images/qr-payment.jpg      # PromptPay QR code for payment
 images/slips/              # Customer payment slips (gitignored)
-db.js                      # SQLite persistence layer (orders + sessions)
+images/settings/           # Uploaded logo/QR via Dashboard (gitignored)
+db.js                      # SQLite persistence layer (orders + sessions + settings + menu)
+seed-menu.js               # Canonical menu seed data (34 items, auto-seed on boot)
 slipok.js                  # SlipOK slip verification (optional, auto-confirm)
 google-apps-script.js      # Reference: Google Apps Script code for Sheet (deploy in Google)
 watchdog.js                # Production watchdog — manages server+tunnel, auto-restart, LINE alerts, logging
@@ -141,6 +143,27 @@ Designated LINE User IDs can order without payment or required delivery fields.
 - **VIP flow**: select menu → confirm → order auto-confirmed (skip payment) → notify via LINE → log to Sheet with status "FREE"
 - **No impact on normal customers** — all VIP checks are behind `isVip` flag
 
+## Settings System (added 2026-06-27)
+All business data editable from Admin Dashboard → Settings tab, persisted to SQLite `settings` table.
+- **Shop info**: name, phone, map URL
+- **Media**: upload logo & QR PromptPay (sharp resize, stored in `images/settings/`)
+- **Business hours**: food/drinks open-close hours + manual override toggle (persists across restart)
+- **Delivery locations**: add/remove/edit from Dashboard
+- **Payment methods**: toggle PromptPay QR / cash
+- **API**: `GET /api/settings` (public), `GET/POST /api/admin/settings` (admin), `POST /api/admin/media/:type`
+
+## Dynamic Menu (added 2026-06-27)
+Menu items loaded from SQLite `menu_items` table — admin changes visible to customers immediately.
+- **Seed**: `seed-menu.js` exports 34 items; `seedMenuIfEmpty()` auto-seeds on first boot
+- **Versioned repair**: `menu_seed_version` setting tracks seed version; upgrades repair stale data while preserving admin's enabled/disabled state
+- **order.html**: `loadMenu()` fetches `/api/menu` (source:"db"), hardcoded MENU kept as offline fallback only
+- **Server price validation**: `MENU_PRICES` rebuilt from DB on boot + after every admin menu change via `reloadMenuFromDb()`
+
+## Cash Payment (added 2026-06-27)
+- Toggle `payment_cash_enabled` in Dashboard Settings → customers see payment method picker in cart
+- Cash order: auto-confirmed (skip QR/slip), LINE notification to customer + admin ("เก็บเงินสดตอนส่ง")
+- `paymentMethod: "cash"|"qr"` stored in order data
+
 ## Security
 - **Rate limiting**: API endpoints limited to 60 req/min/IP; slip upload limited to 10 req/min/IP
 - LINE webhook signature verification (built-in via @line/bot-sdk middleware)
@@ -206,11 +229,12 @@ For a fixed URL (no random URL on each restart):
 **CRITICAL**: Never run `node app.js` or `node watchdog.js` directly for DEV — always use `start-dev.bat` which sets `NODE_ENV=development`
 
 ## Status
-Project is **feature-complete** — ordering, payment, slip verification, order tracking, admin dashboard, menu management, Google Sheets logging, VIP ordering, watchdog, and auto-start are all working.
+Project is **feature-complete** — ordering, payment (QR + cash), slip verification, order tracking, admin dashboard, dynamic menu, settings system, media upload, Google Sheets logging, VIP ordering, watchdog, and auto-start are all working.
+
+All business data (menu, settings, shop hours, payment methods, delivery locations) managed from Dashboard — no code changes needed for business operations.
 
 **Optional future upgrades** (not blocking):
 - Named Tunnel (fixed URL, requires Cloudflare domain ~350 baht/year) — `setup-named-tunnel.bat` ready
-- Dynamic menu loading in `order.html` (currently menu in order.html is still hardcoded; DB menu only affects server-side price validation)
 
 ## Commands
 ```bash
