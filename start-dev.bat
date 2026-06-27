@@ -20,8 +20,9 @@ if not exist .env.development (
 set DEV_PORT=4001
 for /f "tokens=2 delims==" %%p in ('findstr /b "PORT=" .env.development 2^>nul') do set "DEV_PORT=%%p"
 
-:: Kill only DEV server (by port), NOT production
+:: Kill only DEV processes (by port + command line), NOT production
 echo [1/5] Cleaning up old DEV processes...
+powershell -Command "try { Get-WmiObject Win32_Process -Filter \"Name='cloudflared.exe'\" | Where-Object { $_.CommandLine -match 'localhost:%DEV_PORT%' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force } } catch {}" >nul 2>nul
 for /f "tokens=5" %%p in ('netstat -ano ^| findstr "LISTENING" ^| findstr ":%DEV_PORT% " 2^>nul') do (
     if %%p NEQ 0 taskkill /f /pid %%p >nul 2>nul
 )
